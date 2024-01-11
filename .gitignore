@@ -166,28 +166,28 @@ cython_debug/
 */api_secret.py
 
 # legacy files
-legacy_translation
-sehong_legacy
+legacy_translation/
+sehong_legacy/
 
 # datasets
 *.csv
 *.tsv
 *.xlsx
-aihub-koen-translation-integrated-base-10m
-aihub-koen-translation-integrated-mini-1m
-aihub-koen-translation-integrated-tiny-100k
-111_expertized_fields
-124_tech_and_science_2
-125_social_science
-126_general
-563_industrial_patent
-71265_colloquial
-71266_tech_and_science_1
-71382_broadcast_contents
-71475_nmt_quality_assurance
+aihub-koen-translation-integrated-base-10m/
+aihub-koen-translation-integrated-mini-1m/
+aihub-koen-translation-integrated-tiny-100k/
+111_expertized_fields/
+124_tech_and_science_2/
+125_social_science/
+126_general/
+563_industrial_patent/
+71265_colloquial/
+71266_tech_and_science_1/
+71382_broadcast_contents/
+71475_nmt_quality_assurance/
 
 # models
-models
+models/
 
 # wandb
-wandb
+wandb/
