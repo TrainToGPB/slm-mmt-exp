@@ -169,9 +169,13 @@ cython_debug/
 legacy_translation
 sehong_legacy
 
-# Datasets
+# datasets
 *.csv
 *.tsv
+*.xlsx
 aihub-koen-translation-integrated-base-10m
 aihub-koen-translation-integrated-mini-1m
 aihub-koen-translation-integrated-tiny-100k
+
+# models
+models
