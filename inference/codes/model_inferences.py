@@ -16,7 +16,7 @@ from custom_utils.training_utils import set_seed
 
 
 def load_model_and_tokenizer(model_type):
-    assert model_type in ['opus', 'mbart', 'nllb', 'madlad'], 'Error: Wrong Model Type'
+    assert model_type in ['opus', 'mbart', 'nllb-600m', 'nllb-1.3b', 'madlad'], 'Wrong model type'
 
     if model_type == 'opus':
         model_name = 'Helsinki-NLP/opus-mt-tc-big-en-ko'
@@ -26,8 +26,12 @@ def load_model_and_tokenizer(model_type):
         model_name = 'facebook/mbart-large-50-many-to-many-mmt'
         model = MBartForConditionalGeneration.from_pretrained(model_name)
         tokenizer = MBart50Tokenizer.from_pretrained(model_name)
-    elif model_type == 'nllb':
+    elif model_type == 'nllb-600m':
         model_name = 'facebook/nllb-200-distilled-600M'
+        model = M2M100ForConditionalGeneration.from_pretrained(model_name)
+        tokenizer = NllbTokenizer.from_pretrained(model_name)
+    elif model_type == 'nllb-1.3b':
+        model_name = 'facebook/nllb-200-distilled-1.3B'
         model = M2M100ForConditionalGeneration.from_pretrained(model_name)
         tokenizer = NllbTokenizer.from_pretrained(model_name)
     elif model_type == 'madlad':
@@ -46,18 +50,18 @@ def translate(model, tokenizer, text, model_type, device, max_length=512):
 
     if model_type == 'mbart':
         tokenizer.src_lang = 'en_XX'
-    elif model_type == 'nllb':
+    elif model_type == 'nllb-600m' or model_type == 'nllb-1.3b':
         tokenizer.src_lang = 'eng_Latn'
 
     inputs = tokenizer(text, return_tensors="pt", max_length=max_length, truncation=True)
     inputs = {key: value.to(device) for key, value in inputs.items()}
 
     if model_type == 'opus' or model_type == 'madlad':
-        outputs = model.generate(**inputs)
+        outputs = model.generate(**inputs, max_length=max_length)
     elif model_type == 'mbart':
-        outputs = model.generate(**inputs, forced_bos_token_id=tokenizer.lang_code_to_id['ko_KR'])
-    elif model_type == 'nllb':
-        outputs = model.generate(**inputs, forced_bos_token_id=tokenizer.lang_code_to_id['kor_Hang'])
+        outputs = model.generate(**inputs, max_length=max_length, forced_bos_token_id=tokenizer.lang_code_to_id['ko_KR'])
+    elif model_type == 'nllb-600m' or model_type == 'nllb-1.3b':
+        outputs = model.generate(**inputs, max_length=max_length, forced_bos_token_id=tokenizer.lang_code_to_id['kor_Hang'])
 
     translated_text = tokenizer.batch_decode(outputs, skip_special_tokens=True)[0]
 
@@ -79,10 +83,11 @@ if __name__ == '__main__':
     [MODEL_TYPE]
     - opus
     - mbart
-    - nllb
+    - nllb-600m
+    - nllb-1.3b
     - madlad
     """
-    MODEL_TYPE = "madlad"
+    MODEL_TYPE = "nllb-1.3b"
     SOURCE_COLUMN = "en"
     TARGET_COLUMN = MODEL_TYPE + "_trans"
     EVAL_PATH = "../results/test_tiny_uniform100_inferenced.csv"
