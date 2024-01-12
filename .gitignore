@@ -189,5 +189,9 @@ aihub-koen-translation-integrated-tiny-100k/
 # models
 models/
 
+# results
+results/
+*.yaml
+
 # wandb
 wandb/
