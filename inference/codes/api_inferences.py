@@ -85,11 +85,24 @@ def translate_single_text(text):
 
 
 def papago_translate(df):
+    """
+    Translate English text to Korean using the Papago translation service and update the DataFrame.
+
+    Parameters:
+    - df (DataFrame): DataFrame containing the 'en' column with English text to be translated.
+
+    Returns:
+    - df (DataFrame): Updated DataFrame with the 'papago_trans' column containing Korean translations.
+    """
     translator = PapagoTranslator(PAPAGO_CLIENT_ID, PAPAGO_CLIENT_SECRET)
     error_occured = False
 
-    translations = eval_df['papago_trans'].dropna().tolist()
-    start_idx = eval_df['papago_trans'].isnull().idxmax()
+    if 'papago_trans' in df.columns:
+        translations = df['papago_trans'].dropna().tolist()
+        start_idx = df['papago_trans'].isnull().idxmax()
+    else:
+        translations = []
+        start_idx = 0
     for text in tqdm(df['en'][start_idx:]):
         if error_occured:
             print("Error Occured: Papago")
@@ -110,6 +123,15 @@ def papago_translate(df):
 
 
 def google_translate(df):
+    """
+    Translate English text to Korean using the Google Translate service and update the DataFrame.
+
+    Parameters:
+    - df (DataFrame): DataFrame containing the 'en' column with English text to be translated.
+
+    Returns:
+    - df (DataFrame): Updated DataFrame with the 'google_trans' column containing Korean translations.
+    """
     translator = GoogleTranslator()
     error_occured = False
 
@@ -134,6 +156,15 @@ def google_translate(df):
 
 
 def deepl_translate(df):
+    """
+    Translate English text to Korean using the DeepL translation service and update the DataFrame.
+
+    Parameters:
+    - df (DataFrame): DataFrame containing the 'en' column with English text to be translated.
+
+    Returns:
+    - df (DataFrame): Updated DataFrame with the 'deepl_trans' column containing Korean translations.
+    """
     translator = DeeplTranslator(DEEPL_CLIENT_KEY)
     error_occured = False
 
@@ -152,7 +183,7 @@ def deepl_translate(df):
             
         translations.append(translation)
 
-    df['deepl_trans'] = translation
+    df['deepl_trans'] = translations
 
     return df
 
@@ -168,32 +199,35 @@ def translate_dataset(df_path):
     - df (DataFrame): Translated dataset with additional columns for each translation service.
     """
     df = pd.read_csv(df_path)
-    df = df[['source', 'en', 'ko']]
 
-    df = papago_translate(df)
-    df = google_translate(df)
+    # print("[Papago Translation]")
+    # df = papago_translate(df)
+    # print("[Google Translation]")
+    # df = google_translate(df)
+    print("[DeepL Translation]")
     df = deepl_translate(df)
 
     return df
 
 
 if __name__ == '__main__':
-    # # single text inference
-    # text = 'Python is great!'
-    # papago, google, deepl = translate_single_text(text)
-    # print("Papago:", papago)
-    # print("Google:", google)
-    # print("DeepL:", deepl)
+    """
+    [EVAL_PATH]
+    AI Hub Integrated Uniform 100 (Total 800): ../../translation_datasets/aihub_integration/uniform_for_evaluation/test_tiny_uniform100.csv
+    Flores-101 (Total 1012): ../../translation_datasets/flores_101/test_flores.csv
 
+    [SAVE_PATH]
+    AI Hub Integrated Uniform 100 (Total 800, also continuous eval path for papago): ../results/test_tiny_uniform100_inferenced.csv
+    Flores-101 (Total 1012, also continuous eval path for papago): ../results/test_flores_inferenced.csv
+    """
     # # dataset inference
-    # eval_path = './test_tiny_uniform100_inferenced.csv'
-    # eval_df = translate_dataset(eval_path)
-    # eval_df.to_csv('../results/test_tiny_uniform100_inferenced.csv', index=False)
+    # eval_path = '../../translation_datasets/flores_101/test_flores.csv'
+    # save_path = '../results/test_flores_inferenced.csv'
+    # eval_df = translate_dataset(save_path)
+    # eval_df.to_csv(save_path, index=False)
 
-    # papago continuous
+    # papago continuous inference
     eval_path = '../results/test_tiny_uniform100_inferenced.csv'
     eval_df = pd.read_csv(eval_path)
-    # start_idx = eval_df['papago_trans'].isnull().idxmax()
-    # print(start_idx)
     eval_df = papago_translate(eval_df)
     eval_df.to_csv('../results/test_tiny_uniform100_inferenced.csv', index=False)
