@@ -16,6 +16,16 @@ from custom_utils.training_utils import set_seed
 
 
 def load_model_and_tokenizer(model_type):
+    """
+    Load the pre-trained translation model and tokenizer based on the specified model type.
+
+    Parameters:
+    - model_type (str): Type of the translation model ('opus', 'mbart', 'nllb-600m', 'nllb-1.3b', 'madlad').
+
+    Returns:
+    - model (PreTrainedModel): Loaded translation model.
+    - tokenizer (PreTrainedTokenizer): Loaded tokenizer corresponding to the model.
+    """
     assert model_type in ['opus', 'mbart', 'nllb-600m', 'nllb-1.3b', 'madlad'], 'Wrong model type'
 
     if model_type == 'opus':
@@ -43,6 +53,20 @@ def load_model_and_tokenizer(model_type):
 
 
 def translate(model, tokenizer, text, model_type, device, max_length=512):
+    """
+    Translate text from English to Korean using the specified translation model and tokenizer.
+
+    Parameters:
+    - model (PreTrainedModel): Loaded translation model.
+    - tokenizer (PreTrainedTokenizer): Loaded tokenizer corresponding to the model.
+    - text (str): English text to be translated.
+    - model_type (str): Type of the translation model ('opus', 'mbart', 'nllb-600m', 'nllb-1.3b', 'madlad').
+    - device (str): Device to use for inference ('cpu' or 'cuda').
+    - max_length (int, optional): Maximum length of the translated text. Default is 512.
+
+    Returns:
+    - translated_text (str): Translated Korean text.
+    """
     model.to(device)
 
     if model_type == 'madlad':
@@ -69,6 +93,20 @@ def translate(model, tokenizer, text, model_type, device, max_length=512):
 
 
 def inference(model_type, source_column, target_column, eval_path, output_path, device):
+    """
+    Perform inference using the specified translation model on a DataFrame and save the results to a CSV file.
+
+    Parameters:
+    - model_type (str): Type of the translation model ('opus', 'mbart', 'nllb-600m', 'nllb-1.3b', 'madlad').
+    - source_column (str): Name of the column containing English text in the DataFrame.
+    - target_column (str): Name of the column to store the translated Korean text in the DataFrame.
+    - eval_path (str): Path to the CSV file containing the evaluation DataFrame.
+    - output_path (str): Path to save the output CSV file with translated text.
+    - device (str): Device to use for inference ('cpu' or 'cuda').
+
+    Returns:
+    - None: The results are saved to the specified output_path.
+    """
     set_seed(42)
     model, tokenizer = load_model_and_tokenizer(model_type)
     model.to(device)
@@ -87,12 +125,23 @@ if __name__ == '__main__':
     - nllb-1.3b
     - madlad
     """
-    MODEL_TYPE = "nllb-1.3b"
-    SOURCE_COLUMN = "en"
-    TARGET_COLUMN = MODEL_TYPE + "_trans"
-    EVAL_PATH = "../results/test_tiny_uniform100_inferenced.csv"
-    OUTPUT_PATH = "../results/test_tiny_uniform100_inferenced.csv"
-    DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print("DEVICE:", DEVICE)
+    # MODEL_TYPE = "nllb-1.3b"
+    # SOURCE_COLUMN = "en"
+    # TARGET_COLUMN = MODEL_TYPE + "_trans"
+    # EVAL_PATH = "../results/test_tiny_uniform100_inferenced.csv"
+    # OUTPUT_PATH = "../results/test_tiny_uniform100_inferenced.csv"
+    # DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    # print("DEVICE:", DEVICE)
 
-    inference(MODEL_TYPE, SOURCE_COLUMN, TARGET_COLUMN, EVAL_PATH, OUTPUT_PATH, DEVICE)
+    # inference(MODEL_TYPE, SOURCE_COLUMN, TARGET_COLUMN, EVAL_PATH, OUTPUT_PATH, DEVICE)
+
+    model_types = ['opus', 'mbart', 'nllb-600m', 'nllb-1.3b', 'madlad']
+    for MODEL_TYPE in model_types:
+        SOURCE_COLUMN = "en"
+        TARGET_COLUMN = MODEL_TYPE + "_trans"
+        EVAL_PATH = "../results/test_flores_inferenced.csv"
+        OUTPUT_PATH = "../results/test_flores_inferenced.csv"
+        DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        print("DEVICE:", DEVICE)
+
+        inference(MODEL_TYPE, SOURCE_COLUMN, TARGET_COLUMN, EVAL_PATH, OUTPUT_PATH, DEVICE)
