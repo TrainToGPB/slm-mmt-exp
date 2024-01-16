@@ -147,7 +147,7 @@ def calculate_sacrebleu(eval_df, column_name, tokenizer_name='gogamza/kobart-bas
     return sacrebleu
 
 
-def evaluate_all(eval_df, column_list, metric_list):
+def evaluate_all(eval_df, column_list=None, metric_list=None):
     """
     Evaluate multiple metrics for each column in the evaluation dataframe.
 
@@ -159,6 +159,11 @@ def evaluate_all(eval_df, column_list, metric_list):
     Returns:
     - eval_dict (dict): Dictionary containing evaluation results for each column and metric.
     """
+    if column_list is None:
+        column_list = ['google_trans', 'deepl_trans','mbart_trans', 'nllb-600m_trans', 'nllb-1.3b_trans', 'madlad_trans', 'nllb-1.3b_trans']
+    if metric_list is None:
+        metric_list = ['bleu', 'sacrebleu', 'rouge', 'wer']
+
     eval_dict = dict()
     for col in column_list:
         print(f"Evaluting Column {col}..")
@@ -219,7 +224,7 @@ def print_evaluation_results(eval_dict):
             print(f" - {metric_key.upper()}: {metric_value:.2f}")
 
 
-def save_eval_results_as_yaml(eval_dict, file_path):
+def save_eval_results_as_yaml(eval_dict, save_path):
     """
     Save the evaluation results to a YAML file.
 
@@ -227,22 +232,17 @@ def save_eval_results_as_yaml(eval_dict, file_path):
     - eval_dict (dict): Dictionary containing evaluation results.
     - file_path (str): Path to the YAML file where results will be saved.
     """
-    with open(file_path, 'w') as file:
+    with open(save_path, 'w') as file:
         yaml.dump(eval_dict, file)
 
 
-if __name__ == '__main__':
-    eval_path = '../results/test_tiny_uniform100_inferenced.csv'
-    eval_df = pd.read_csv(eval_path)
-    
-    # evaluate sentence
-    # u100_eval = pd.read_csv(eval_path)
-    # sentence_num = 200
-    # reference = u100_eval['ko'][sentence_num]
-    # candidate = u100_eval['deepl_trans'][sentence_num]
-    # print(calculate_sentence_bleu(reference, candidate))
-    # print(calculate_sentence_rouge(reference, candidate))
+def load_yaml_for_eval_results(yaml_path):
+    with open(yaml_path, 'r') as file:
+        eval_dict = yaml.safe_load(file)
+    return eval_dict
 
+
+if __name__ == '__main__':
     # evaluate dataset
     """
     [COLUMN_LIST]
@@ -272,7 +272,23 @@ if __name__ == '__main__':
      - 번역보다는 음성 인식 task에서 주로 사용
      - 단순하게 generation과 reference 간 단어 단위 오류율로 계산
     """
-    column_list = ['nllb-1.3b_trans']
+    eval_path = '../results/test_flores_inferenced.csv'
+    eval_df = pd.read_csv(eval_path)
+
+    column_list = ['google_trans', 'deepl_trans', 'mbart_trans', 'nllb-600m_trans', 'nllb-1.3b_trans', 'madlad_trans']
     metric_list = ['bleu', 'sacrebleu', 'rouge', 'wer'] # bleu, sacrebleu, rouge, wer
+    source_list = [111, 124, 125, 126, 563, 71265, 71266, 71382]
+
+    # evaluate all
     eval_dict = evaluate_all(eval_df, column_list, metric_list)
     print_evaluation_results(eval_dict)
+
+    save_path = '../results/test_flores_metrics.yaml'
+    save_eval_results_as_yaml(eval_dict, save_path)
+
+    # # evaluate separately by source (only for aihub dataset)
+    # eval_dict_by_source = evaluate_by_source(eval_df, source_list, column_list, metric_list)
+    # print_evaluation_results(eval_dict_by_source)
+
+    # save_path_by_source = '../results/test_tiny_uniform100_metrics_by_source.yaml'
+    # save_eval_results_as_yaml(eval_dict_by_source, save_path_by_source)
