@@ -4,6 +4,17 @@ import seaborn as sns
 import pandas as pd
 
 
+def restructure_metric_column(eval_dict, column_list, metric_list_detail):
+    new_dict = dict()
+    for metric in metric_list_detail:
+        metric_dict = dict()
+        for column in column_list:
+            metric_dict[column] = eval_dict[column][metric]
+        new_dict[metric] = metric_dict
+
+    return new_dict
+
+
 def restructure_metric_column_source(eval_dict, source_list, column_list, metric_list_detail):
     new_dict = {}
     for metric in metric_list_detail:
@@ -30,6 +41,34 @@ def restructure_metric_source_column(eval_dict, source_list, column_list, metric
         new_dict[metric] = num_dict
 
     return new_dict
+
+
+def plot_bar(
+        eval_dict, 
+        metric_name, 
+        # trans_types=None, 
+        ylim=None, 
+        show_chart=True, 
+        save_path=None
+    ):
+    # if trans_types is None:
+    #     trans_types = list(eval_dict.keys())
+
+    df = pd.DataFrame(list(eval_dict.items()), columns=['Translator', metric_name])
+    df['Translator'] = df['Translator'].apply(lambda x: x.replace('_trans', ''))
+
+    plt.figure(figsize=(15, 8))
+    sns.barplot(x='Translator', y=metric_name, data=df, palette='viridis')
+    if ylim is not None:
+        plt.ylim(ylim[0], ylim[1])
+    plt.title(metric_name + ' Scores')
+
+    if show_chart:
+        plt.show()
+
+    if save_path is not None:
+        plt.savefig(save_path, bbox_inches='tight', pad_inches=0.2)
+        plt.close()
 
 
 def plot_bar_groupby_source(
@@ -90,8 +129,9 @@ def plot_bar_groupby_source(
     df = pd.DataFrame(reshaped_data)
 
     # Use seaborn to create a grouped bar plot
-    plt.figure(figsize=(15, 8))  # Increase figure size
-    sns.barplot(x='Dataset', y=metric_name, hue='Translator Type', data=df)
+    plt.figure(figsize=(15, 8))
+    viridis_palette = sns.color_palette("viridis", n_colors=len(trans_types))
+    sns.barplot(x='Dataset', y=metric_name, hue='Translator Type', data=df, palette=viridis_palette)
     if ylim is not None:
         plt.ylim(ylim[0], ylim[1])
     plt.title(metric_name + ' Scores Grouped by Dataset')
@@ -192,15 +232,20 @@ if __name__ == '__main__':
         'deepl_trans', 
         'mbart_trans', 
         'nllb-600m_trans', 
-        'nllb-1.3b_trans',
+        # 'nllb-1.3b_trans',
         'madlad_trans'
     ]
-    metric_list_detail = ['bleu', 'sacrebleu', 'rouge_1', 'rouge_2', 'wer']
+    metric_list_detail = ['bleu', 'sacrebleu'] # 'bleu', 'sacrebleu', 'rouge_1', 'rouge_2', 'wer'
 
-    yaml_path = '../results/test_tiny_uniform100_metrics_by_translator.yaml'
+    yaml_path = '../results/test_tiny_uniform100_metrics.yaml'
     with open(yaml_path, 'r') as file:
+        result = yaml.safe_load(file)
+    
+    yaml_path_by_translator = '../results/test_tiny_uniform100_metrics_by_translator.yaml'
+    with open(yaml_path_by_translator, 'r') as file:
         result_by_translator = yaml.safe_load(file)
 
+    dict_metric_column = restructure_metric_column(result, column_list, metric_list_detail)
     dict_metric_column_source = restructure_metric_column_source(result_by_translator, source_list, column_list, metric_list_detail)
     for metric in metric_list_detail:
         if metric == 'bleu':
@@ -219,24 +264,33 @@ if __name__ == '__main__':
             ylim = (0, 80)
             metric_name = 'WER'
 
-        save_path_groupby_source = '../results/eval_results_plot_images/' + metric + '_groupby_dataset.png'
-        plot_bar_groupby_source(
-            dict_metric_column_source[metric],
+        save_path = '../results/chart_images/aihub_' + metric + '.png'
+        plot_bar(
+            dict_metric_column[metric],
             metric_name=metric_name,
-            trans_types=None,
-            src_types=None,
-            ylim=ylim,
+            # ylim=ylim,
             show_chart=False,
-            save_path=save_path_groupby_source
+            save_path=save_path
         )
 
-        save_path_groupby_translator = '../results/eval_results_plot_images/' + metric + '_groupby_translator.png'
-        plot_bar_groupby_translator(
-            dict_metric_column_source[metric],
-            metric_name=metric_name,
-            trans_types=None,
-            src_types=None,
-            ylim=ylim,
-            show_chart=False,
-            save_path=save_path_groupby_translator
-        )
+        # save_path_groupby_source = '../results/chart_images/aihub_' + metric + '_groupby_dataset.png'
+        # plot_bar_groupby_source(
+        #     dict_metric_column_source[metric],
+        #     metric_name=metric_name,
+        #     trans_types=None,
+        #     src_types=None,
+        #     ylim=ylim,
+        #     show_chart=False,
+        #     save_path=save_path_groupby_source
+        # )
+
+        # save_path_groupby_translator = '../results/chart_images/aihub_' + metric + '_groupby_translator.png'
+        # plot_bar_groupby_translator(
+        #     dict_metric_column_source[metric],
+        #     metric_name=metric_name,
+        #     trans_types=None,
+        #     src_types=None,
+        #     ylim=ylim,
+        #     show_chart=False,
+        #     save_path=save_path_groupby_translator
+        # )
