@@ -1,12 +1,11 @@
 import yaml
 
-import pandas as pd
-from nltk.translate.bleu_score import sentence_bleu, corpus_bleu
-from rouge import Rouge
 import Levenshtein
-from transformers import AutoTokenizer
-import evaluate
+import pandas as pd
 from tqdm import tqdm
+from rouge import Rouge
+from transformers import AutoTokenizer
+from nltk.translate.bleu_score import sentence_bleu, corpus_bleu
 
 
 def get_average(tuple_data):
