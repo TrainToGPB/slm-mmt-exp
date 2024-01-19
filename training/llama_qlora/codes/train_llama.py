@@ -1,8 +1,6 @@
 # built-in
 import os
 import sys
-import yaml
-import argparse
 
 # third-party
 import torch
@@ -13,10 +11,11 @@ from datasets import load_dataset
 from accelerate import Accelerator
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from peft import LoraConfig
-from peft.tuners.lora import LoraLayer
-from trl import SFTTrainer
-from transformers import TrainingArguments
+from peft import get_peft_model, prepare_model_for_kbit_training
+from transformers import Seq2SeqTrainer, Seq2SeqTrainingArguments
 from transformers import BitsAndBytesConfig
+from transformers import default_data_collator
+import bitsandbytes as bnb
 import torch.distributed.checkpoint as DCP
 
 # custom
@@ -32,7 +31,7 @@ def load_model_and_tokenizer(
         bnb_4bit_quant_type,
         bnb_4bit_compute_dtype,
         use_double_quant,
-        device_map  
+        device_map
     ):
     compute_dtype = getattr(torch, bnb_4bit_compute_dtype)
     bnb_config = BitsAndBytesConfig(
@@ -58,58 +57,49 @@ def load_model_and_tokenizer(
     return model, tokenizer
 
 
-def preprocess_example(example):
-    en_sign = '<English>'
-    ko_sign = '<한국어>'
-    text = " ".join([en_sign, example['en'], ko_sign, example['ko']])
-    return {'text': text}
+def preprocess_example(example, en_sign, ko_sign, max_length, tokenizer):
+    prompt = " ".join([en_sign, example['en'], ko_sign])
+    response = example['ko']
+
+    model_inputs = tokenizer(
+        prompt, 
+        text_target=response, 
+        max_length=max_length, 
+        padding='max_length', 
+        truncation=True,
+        return_tensors="pt"
+    )
+    model_inputs = {key: value.squeeze() for key, value in model_inputs.items()}
+
+    return model_inputs
 
 
 def postprocess_text(preds, labels):
-    """
-    Postprocess the predicted and reference texts by stripping leading and trailing whitespaces.
-
-    Parameters:
-    - preds (list): List of predicted texts.
-    - labels (list): List of reference texts.
-
-    Returns:
-    - tuple: Tuple containing postprocessed predicted and reference texts.
-    """
     preds = [pred.strip() for pred in preds]
     labels = [[label.strip()] for label in labels]
     return preds, labels
 
 
+def find_all_linear_names(model, use_4bit, use_8bit):
+    cls = bnb.nn.Linear4bit if use_4bit else (bnb.nn.Linear8bitLt if use_8bit else torch.nn.Linear)
+    lora_module_names = set()
+    for name, module in model.named_modules():
+        if isinstance(module, cls):
+            names = name.split('.')
+            lora_module_names.add(names[0] if len(names) == 1 else names[-1])
+
+    if 'lm_head' in lora_module_names: # needed for 16-bit
+        lora_module_names.remove('lm_head')
+
+    return list(lora_module_names)
+
+
 def preprocess_logits_for_metrics(logits, labels):
-    """
-    Preprocess logits and labels for metric computation by extracting predicted IDs.
-
-    Parameters:
-    - logits (tuple): Tuple containing model logits.
-    - labels (tensor): Tensor containing label IDs.
-
-    Returns:
-    - tuple: Tuple containing predicted IDs and labels.
-    """
     pred_ids = torch.argmax(logits[0], dim=-1)
     return pred_ids, labels
 
 
 def calculate_warmup_steps(epochs, dataset_size, batch_size, gradient_accumulation_steps, warmup_ratio):
-    """
-    Calculate the number of warm-up steps for a sequence-to-sequence model training.
-
-    Parameters:
-    - epochs (int): Number of training epochs.
-    - dataset_size (int): Total size of the training dataset.
-    - batch_size (int): Batch size per device.
-    - gradient_accumulation_steps (int): Number of gradient accumulation steps.
-    - warmup_ratio (float): Ratio of warm-up steps to total training steps.
-
-    Returns:
-    - int: Number of warm-up steps to be used during training.
-    """
     steps_per_epoch = (dataset_size / batch_size)
     total_steps = epochs * steps_per_epoch / gradient_accumulation_steps
     total_steps_per_device = total_steps / torch.cuda.device_count()
@@ -134,7 +124,7 @@ def merge_and_save_distcp(model, distcp_dir):
 
 def train(args):
     set_seed(args.seed)
-    os.environ['CUDA_VISIBLE_DEVICE'] = '2,3' # if args.use_fsdp else '2'
+    os.environ['CUDA_VISIBLE_DEVICE'] = '2,3' if args.use_fsdp else '2'
     os.environ['TOKENIZERS_PARALLELISM'] = 'false'
 
     model, tokenizer = load_model_and_tokenizer(
@@ -145,8 +135,32 @@ def train(args):
         args.use_double_quant,
         args.device_map
     )
+    if hasattr(model, "enable_input_require_grads"):
+        model.enable_input_require_grads()
+    else:
+        def make_inputs_require_grad(module, input, output):
+            output.requires_grad_(True)
+        model.get_input_embeddings().register_forward_hook(make_inputs_require_grad)
+
+    modules = find_all_linear_names(model, args.use_4bit, args.use_8bit) # all linear modules in attention + MLP modules (gate_proj, up_proj, down_proj)
+    # modules = ['o_proj', 'v_proj', 'q_proj', 'k_proj'] # linear modules only in attention module
+    print("LoRA adapted modules:", modules)
+    
+    lora_config = LoraConfig(
+        lora_alpha=args.lora_alpha,
+        lora_dropout=args.lora_dropout,
+        r=args.lora_r,
+        bias='none',
+        target_modules=modules,
+        task_type='CAUSAL_LM'
+    )
+
+    model = prepare_model_for_kbit_training(model, False)
+    model = get_peft_model(model, lora_config)
+    model.print_trainable_parameters()
+
     dataset = load_dataset(args.dataset_name)
-    dataset = dataset.map(lambda example: preprocess_example(example))
+    dataset = dataset.map(lambda example: preprocess_example(example, args.en_sign, args.ko_sign, args.max_length, tokenizer))
 
     metric = evaluate.load('sacrebleu')
 
@@ -158,14 +172,6 @@ def train(args):
     )
     wandb.init(project=args.project_name, name=args.run_name)
 
-    lora_config = LoraConfig(
-        lora_alpha=args.lora_alpha,
-        lora_dropout=args.lora_dropout,
-        r=args.lora_r,
-        bias='none',
-        task_type='CAUSAL_LM'
-    )
-
     dataset_size = len(dataset['train'])
     warmup_steps = calculate_warmup_steps(
         epochs=args.num_epochs,
@@ -175,7 +181,7 @@ def train(args):
         warmup_ratio=args.warmup_ratio
     )
 
-    training_args = TrainingArguments(
+    training_args = Seq2SeqTrainingArguments(
         output_dir=args.output_dir,
         dataloader_num_workers=args.dataloader_num_workers,
         per_device_train_batch_size=args.per_device_batch_size,
@@ -186,6 +192,7 @@ def train(args):
         warmup_steps=warmup_steps,
         lr_scheduler_type=args.lr_scheduler_type,
         optim=args.optim,
+        gradient_checkpointing=args.gradient_checkpointing,
         gradient_accumulation_steps=args.gradient_accumulation_steps,
         max_grad_norm=args.max_grad_norm,
         weight_decay=args.weight_decay,
@@ -203,6 +210,7 @@ def train(args):
         report_to=args.report_to,
         load_best_model_at_end=args.load_best_model_at_end,
         metric_for_best_model=args.metric_for_best_model,
+        remove_unused_columns=args.remove_unused_columns
     )
 
     def compute_sacrebleu(eval_preds):
@@ -222,40 +230,31 @@ def train(args):
 
         return result
 
-    # data_collator = DataCollatorForCausalLM(
-    #     tokenizer=tokenizer,
-    # )
 
     if args.use_fsdp:
         accelerator = Accelerator()
         trainer = accelerator.prepare(
-            SFTTrainer(
+            Seq2SeqTrainer(
                 model=model,
                 tokenizer=tokenizer,
                 train_dataset=dataset['train'],
                 eval_dataset=dataset['validation'],
                 compute_metrics=compute_sacrebleu,
                 preprocess_logits_for_metrics=preprocess_logits_for_metrics,
-                peft_config=lora_config,
-                dataset_text_field='text',
-                max_seq_length=args.max_seq_length,
                 args=training_args,
-                packing=args.packing
+                data_collator=default_data_collator
             )
         )
     else:
-        trainer = SFTTrainer(
+        trainer = Seq2SeqTrainer(
             model=model,
             tokenizer=tokenizer,
             train_dataset=dataset['train'],
             eval_dataset=dataset['validation'],
             compute_metrics=compute_sacrebleu,
             preprocess_logits_for_metrics=preprocess_logits_for_metrics,
-            peft_config=lora_config,
-            dataset_text_field='text',
-            max_seq_length=args.max_seq_length,
             args=training_args,
-            packing=args.packing
+            data_collator=default_data_collator
         )
             
     trainer.train()
