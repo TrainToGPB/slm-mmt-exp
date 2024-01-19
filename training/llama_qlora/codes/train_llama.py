@@ -33,6 +33,21 @@ def load_model_and_tokenizer(
         use_double_quant,
         device_map
     ):
+    """
+    Load a pre-trained language model and tokenizer with optional bits-and-bytes quantization.
+
+    Parameters:
+    - plm_name (str): Pre-trained language model name.
+    - use_4bit (bool): Whether to use 4-bit quantization.
+    - bnb_4bit_quant_type (str): Quantization type for 4-bit quantization.
+    - bnb_4bit_compute_dtype (str): Data type for computation during 4-bit quantization.
+    - use_double_quant (bool): Whether to use double quantization.
+    - device_map (int): CUDA device ID.
+
+    Returns:
+    - model (PreTrainedModel): Loaded pre-trained language model.
+    - tokenizer (PreTrainedTokenizer): Loaded tokenizer.
+    """
     compute_dtype = getattr(torch, bnb_4bit_compute_dtype)
     bnb_config = BitsAndBytesConfig(
         load_in_4bit=use_4bit,
@@ -58,6 +73,19 @@ def load_model_and_tokenizer(
 
 
 def preprocess_example(example, en_sign, ko_sign, max_length, tokenizer):
+    """
+    Preprocess a single example for training or evaluation.
+
+    Parameters:
+    - example (dict): Single example containing English and Korean text.
+    - en_sign (str): English signature.
+    - ko_sign (str): Korean signature.
+    - max_length (int): Maximum length of the input sequence.
+    - tokenizer (PreTrainedTokenizer): Tokenizer for encoding the input.
+
+    Returns:
+    - model_inputs (dict): Model inputs for the preprocessed example.
+    """
     prompt = " ".join([en_sign, example['en'], ko_sign])
     response = example['ko']
 
@@ -75,12 +103,33 @@ def preprocess_example(example, en_sign, ko_sign, max_length, tokenizer):
 
 
 def postprocess_text(preds, labels):
+    """
+    Postprocess model predictions and labels.
+
+    Parameters:
+    - preds (list): Model predictions.
+    - labels (list): Ground truth labels.
+
+    Returns:
+    - tuple: Tuple containing postprocessed predictions and labels.
+    """
     preds = [pred.strip() for pred in preds]
     labels = [[label.strip()] for label in labels]
     return preds, labels
 
 
 def find_all_linear_names(model, use_4bit, use_8bit):
+    """
+    Find all linear module names in the LoRA-adapted model.
+
+    Parameters:
+    - model (PreTrainedModel): LoRA-adapted model.
+    - use_4bit (bool): Whether to use 4-bit quantization.
+    - use_8bit (bool): Whether to use 8-bit quantization.
+
+    Returns:
+    - list: List of linear module names.
+    """
     cls = bnb.nn.Linear4bit if use_4bit else (bnb.nn.Linear8bitLt if use_8bit else torch.nn.Linear)
     lora_module_names = set()
     for name, module in model.named_modules():
@@ -95,11 +144,34 @@ def find_all_linear_names(model, use_4bit, use_8bit):
 
 
 def preprocess_logits_for_metrics(logits, labels):
+    """
+    Preprocess logits for metric calculation.
+
+    Parameters:
+    - logits (Tensor): Model logits.
+    - labels (Tensor): Ground truth labels.
+
+    Returns:
+    - tuple: Tuple containing preprocessed predictions and labels.
+    """
     pred_ids = torch.argmax(logits[0], dim=-1)
     return pred_ids, labels
 
 
 def calculate_warmup_steps(epochs, dataset_size, batch_size, gradient_accumulation_steps, warmup_ratio):
+    """
+    Calculate the number of warm-up steps for model training.
+
+    Parameters:
+    - epochs (int): Number of training epochs.
+    - dataset_size (int): Total size of the training dataset.
+    - batch_size (int): Batch size per device.
+    - gradient_accumulation_steps (int): Number of gradient accumulation steps.
+    - warmup_ratio (float): Ratio of warm-up steps to total training steps.
+
+    Returns:
+    - int: Number of warm-up steps.
+    """
     steps_per_epoch = (dataset_size / batch_size)
     total_steps = epochs * steps_per_epoch / gradient_accumulation_steps
     total_steps_per_device = total_steps / torch.cuda.device_count()
@@ -108,6 +180,13 @@ def calculate_warmup_steps(epochs, dataset_size, batch_size, gradient_accumulati
 
 
 def merge_and_save_distcp(model, distcp_dir):
+    """
+    Merge and save distributed checkpoints.
+
+    Parameters:
+    - model (PreTrainedModel): Model to save.
+    - distcp_dir (str): Directory containing distributed checkpoints.
+    """
     state_dict = {
         "model": model.state_dict(),
     }
@@ -123,6 +202,12 @@ def merge_and_save_distcp(model, distcp_dir):
 
 
 def train(args):
+    """
+    Train a QLoRA-adapted language model.
+
+    Parameters:
+    - args (Namespace): Command-line arguments.
+    """
     set_seed(args.seed)
     os.environ['CUDA_VISIBLE_DEVICE'] = '2,3' if args.use_fsdp else '2'
     os.environ['TOKENIZERS_PARALLELISM'] = 'false'
