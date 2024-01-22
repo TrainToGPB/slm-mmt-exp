@@ -118,7 +118,7 @@ def postprocess_text(preds, labels):
     return preds, labels
 
 
-def find_all_linear_names(model, use_4bit, use_8bit):
+def find_all_linear_names(model, use_4bit=True, use_8bit=False):
     """
     Find all linear module names in the LoRA-adapted model.
 
@@ -130,6 +130,9 @@ def find_all_linear_names(model, use_4bit, use_8bit):
     Returns:
     - list: List of linear module names.
     """
+    if use_4bit and use_8bit:
+        raise ValueError("Both use_4bit and use_8bit cannot be True at the same time.")
+    
     cls = bnb.nn.Linear4bit if use_4bit else (bnb.nn.Linear8bitLt if use_8bit else torch.nn.Linear)
     lora_module_names = set()
     for name, module in model.named_modules():
@@ -227,8 +230,8 @@ def train(args):
             output.requires_grad_(True)
         model.get_input_embeddings().register_forward_hook(make_inputs_require_grad)
 
-    modules = find_all_linear_names(model, args.use_4bit, args.use_8bit) # all linear modules in attention + MLP modules (gate_proj, up_proj, down_proj)
-    # modules = ['o_proj', 'v_proj', 'q_proj', 'k_proj'] # linear modules only in attention module
+    # modules = find_all_linear_names(model, args.use_4bit, args.use_8bit)
+    modules = args.lora_target_modules
     print("LoRA adapted modules:", modules)
     
     lora_config = LoraConfig(
@@ -299,12 +302,11 @@ def train(args):
     )
 
     def compute_sacrebleu(eval_preds):
-        preds, labels = eval_preds
-        if isinstance(preds, tuple):
-            preds = preds[0]
+        preds = eval_preds.predictions[0] if isinstance(eval_preds.predictions, tuple) else eval_preds.predictions
+        preds = np.argmax(preds, axis=2)
         decoded_preds = tokenizer.batch_decode(preds, skip_special_tokens=True)
 
-        labels = np.where(labels != -100, labels, tokenizer.pad_token_id)
+        labels = np.where(eval_preds.label_ids != -100, eval_preds.label_ids, tokenizer.pad_token_id)
         decoded_labels = tokenizer.batch_decode(labels, skip_special_tokens=True)
 
         decoded_preds, decoded_labels = postprocess_text(decoded_preds, decoded_labels)
@@ -324,9 +326,9 @@ def train(args):
                 tokenizer=tokenizer,
                 train_dataset=dataset['train'],
                 eval_dataset=dataset['validation'],
-                compute_metrics=compute_sacrebleu,
-                preprocess_logits_for_metrics=preprocess_logits_for_metrics,
                 args=training_args,
+                compute_metrics=compute_sacrebleu,
+                # preprocess_logits_for_metrics=preprocess_logits_for_metrics,
                 data_collator=default_data_collator
             )
         )
@@ -336,9 +338,9 @@ def train(args):
             tokenizer=tokenizer,
             train_dataset=dataset['train'],
             eval_dataset=dataset['validation'],
-            compute_metrics=compute_sacrebleu,
-            preprocess_logits_for_metrics=preprocess_logits_for_metrics,
             args=training_args,
+            compute_metrics=compute_sacrebleu,
+            # preprocess_logits_for_metrics=preprocess_logits_for_metrics,
             data_collator=default_data_collator
         )
             
