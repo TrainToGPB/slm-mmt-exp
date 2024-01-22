@@ -119,6 +119,13 @@ def calculate_warmup_steps(epochs, dataset_size, batch_size, gradient_accumulati
 
 
 def merge_and_save_distcp(model, distcp_dir):
+    """
+    Merge and save distributed checkpoints.
+
+    Parameters:
+    - model (PreTrainedModel): Model to save.
+    - distcp_dir (str): Directory containing distributed checkpoints.
+    """
     state_dict = {
         "model": model.state_dict(),
     }
