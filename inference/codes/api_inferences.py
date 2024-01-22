@@ -133,11 +133,11 @@ def google_translate(df):
     - df (DataFrame): Updated DataFrame with the 'google_trans' column containing Korean translations.
     """
     translator = GoogleTranslator()
-    error_occured = False
+    error_occurred = False
 
     translations = []
     for text in tqdm(df['en']):
-        if error_occured:
+        if error_occurred:
             print("Error Occured: Google")
             translations.extend([None] * (len(df['en']) - len(translations)))
             break
@@ -166,11 +166,11 @@ def deepl_translate(df):
     - df (DataFrame): Updated DataFrame with the 'deepl_trans' column containing Korean translations.
     """
     translator = DeeplTranslator(DEEPL_CLIENT_KEY)
-    error_occured = False
+    error_occurred = False
 
     translations = []
     for text in tqdm(df['en']):
-        if error_occured:
+        if error_occurred:
             print("Error Occured: DeepL")
             translations.extend([None] * (len(df['en']) - len(translations)))
             break
@@ -200,10 +200,10 @@ def translate_dataset(df_path):
     """
     df = pd.read_csv(df_path)
 
-    # print("[Papago Translation]")
-    # df = papago_translate(df)
-    # print("[Google Translation]")
-    # df = google_translate(df)
+    print("[Papago Translation]")
+    df = papago_translate(df)
+    print("[Google Translation]")
+    df = google_translate(df)
     print("[DeepL Translation]")
     df = deepl_translate(df)
 
@@ -226,8 +226,15 @@ if __name__ == '__main__':
     # eval_df = translate_dataset(save_path)
     # eval_df.to_csv(save_path, index=False)
 
-    # papago continuous inference
-    eval_path = '../results/test_tiny_uniform100_inferenced.csv'
+    # # papago continuous inference
+    # eval_path = '../results/test_tiny_uniform100_inferenced.csv'
+    # eval_df = pd.read_csv(eval_path)
+    # eval_df = papago_translate(eval_df)
+    # eval_df.to_csv('../results/test_tiny_uniform100_inferenced.csv', index=False)
+
+    # inference again...
+    eval_path = '../../translation_datasets/flores_101/test_flores.csv'
+    save_path = '../results/test_flores_inferenced.csv'
     eval_df = pd.read_csv(eval_path)
-    eval_df = papago_translate(eval_df)
-    eval_df.to_csv('../results/test_tiny_uniform100_inferenced.csv', index=False)
+    eval_df = google_translate(eval_df)
+    eval_df.to_csv(save_path, index=False)
