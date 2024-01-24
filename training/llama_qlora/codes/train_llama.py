@@ -1,6 +1,8 @@
 # built-in
 import os
 import sys
+os.environ['CUDA_VISIBLE_DEVICES'] = '2,3'
+os.environ['TOKENIZERS_PARALLELISM'] = 'false'
 
 # third-party
 import torch
@@ -146,21 +148,6 @@ def find_all_linear_names(model, use_4bit=True, use_8bit=False):
     return list(lora_module_names)
 
 
-def preprocess_logits_for_metrics(logits, labels):
-    """
-    Preprocess logits for metric calculation.
-
-    Parameters:
-    - logits (Tensor): Model logits.
-    - labels (Tensor): Ground truth labels.
-
-    Returns:
-    - tuple: Tuple containing preprocessed predictions and labels.
-    """
-    pred_ids = torch.argmax(logits[0], dim=-1)
-    return pred_ids, labels
-
-
 def calculate_warmup_steps(epochs, dataset_size, batch_size, gradient_accumulation_steps, warmup_ratio):
     """
     Calculate the number of warm-up steps for model training.
@@ -212,8 +199,6 @@ def train(args):
     - args (Namespace): Command-line arguments.
     """
     set_seed(args.seed)
-    os.environ['CUDA_VISIBLE_DEVICE'] = '2,3' if args.use_fsdp else '2'
-    os.environ['TOKENIZERS_PARALLELISM'] = 'false'
 
     model, tokenizer = load_model_and_tokenizer(
         args.plm_name,
@@ -296,19 +281,34 @@ def train(args):
         save_total_limit=args.save_total_limit,
         seed=args.seed,
         report_to=args.report_to,
+        # eval_accumulation_steps=args.eval_accumulation_steps,
         load_best_model_at_end=args.load_best_model_at_end,
         metric_for_best_model=args.metric_for_best_model,
         remove_unused_columns=args.remove_unused_columns
     )
 
-    def compute_sacrebleu(eval_preds):
-        preds = eval_preds.predictions[0] if isinstance(eval_preds.predictions, tuple) else eval_preds.predictions
-        preds = np.argmax(preds, axis=2)
+
+    def preprocess_logits_for_metrics(logits, labels):
+        """
+        Preprocess logits for metric calculation.
+
+        Parameters:
+        - logits (Tensor): Model logits.
+        - labels (Tensor): Ground truth labels.
+
+        Returns:
+        - tuple: Tuple containing preprocessed predictions and labels.
+        """
+        pred_ids = torch.argmax(logits, dim=-1)
+        label_ids = torch.where(labels != -100, labels, tokenizer.pad_token_id)
+        return pred_ids, label_ids
+
+
+    def compute_sacrebleu(p):
+        preds, labels = p.predictions[0], p.label_ids
+
         decoded_preds = tokenizer.batch_decode(preds, skip_special_tokens=True)
-
-        labels = np.where(eval_preds.label_ids != -100, eval_preds.label_ids, tokenizer.pad_token_id)
         decoded_labels = tokenizer.batch_decode(labels, skip_special_tokens=True)
-
         decoded_preds, decoded_labels = postprocess_text(decoded_preds, decoded_labels)
 
         result = metric.compute(predictions=decoded_preds, references=decoded_labels)
@@ -328,7 +328,7 @@ def train(args):
                 eval_dataset=dataset['validation'],
                 args=training_args,
                 compute_metrics=compute_sacrebleu,
-                # preprocess_logits_for_metrics=preprocess_logits_for_metrics,
+                preprocess_logits_for_metrics=preprocess_logits_for_metrics,
                 data_collator=default_data_collator
             )
         )
@@ -340,7 +340,7 @@ def train(args):
             eval_dataset=dataset['validation'],
             args=training_args,
             compute_metrics=compute_sacrebleu,
-            # preprocess_logits_for_metrics=preprocess_logits_for_metrics,
+            preprocess_logits_for_metrics=preprocess_logits_for_metrics,
             data_collator=default_data_collator
         )
             
