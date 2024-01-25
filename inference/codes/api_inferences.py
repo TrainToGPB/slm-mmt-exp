@@ -8,8 +8,21 @@ from deepl import Translator as DeeplTranslator
 import pandas as pd
 
 sys.path.append('./')
-from api_secret import PAPAGO_CLIENT_ID, PAPAGO_CLIENT_SECRET
-from api_secret import DEEPL_CLIENT_KEY
+from api_secret import (
+    PAPAGO_CLIENT_ID_0, 
+    PAPAGO_CLIENT_ID_1, 
+    PAPAGO_CLIENT_ID_2, 
+    PAPAGO_CLIENT_ID_3, 
+    PAPAGO_CLIENT_ID_4, 
+    PAPAGO_CLIENT_ID_5, 
+    PAPAGO_CLIENT_SECRET_0,
+    PAPAGO_CLIENT_SECRET_1,
+    PAPAGO_CLIENT_SECRET_2,
+    PAPAGO_CLIENT_SECRET_3,
+    PAPAGO_CLIENT_SECRET_4,
+    PAPAGO_CLIENT_SECRET_5,
+)
+from api_secret import DEEPL_CLIENT_KEY_0, DEEPL_CLIENT_KEY_1
 
 
 class PapagoTranslator:
@@ -70,7 +83,7 @@ def translate_single_text(text):
     - deepl_translation (str): Translated text using DeepL.
     """
     # Papago
-    papago_translator = PapagoTranslator(PAPAGO_CLIENT_ID, PAPAGO_CLIENT_SECRET)
+    papago_translator = PapagoTranslator(PAPAGO_CLIENT_ID_0, PAPAGO_CLIENT_SECRET_0)
     papago_translation = papago_translator.translate(src_lang='en', tgt_lang='ko', text=text)
 
     # Google
@@ -78,13 +91,13 @@ def translate_single_text(text):
     google_translation = google_translator.translate(src='en', dest='ko', text=text).text
 
     # DeepL
-    deepl_translator = DeeplTranslator(DEEPL_CLIENT_KEY)
+    deepl_translator = DeeplTranslator(DEEPL_CLIENT_KEY_0)
     deepl_translation = deepl_translator.translate_text(target_lang='KO', text=text)
 
     return papago_translation, google_translation, deepl_translation
 
 
-def papago_translate(df):
+def papago_translate(df, client_id=PAPAGO_CLIENT_ID_0, client_secret=PAPAGO_CLIENT_SECRET_0):
     """
     Translate English text to Korean using the Papago translation service and update the DataFrame.
 
@@ -94,7 +107,7 @@ def papago_translate(df):
     Returns:
     - df (DataFrame): Updated DataFrame with the 'papago_trans' column containing Korean translations.
     """
-    translator = PapagoTranslator(PAPAGO_CLIENT_ID, PAPAGO_CLIENT_SECRET)
+    translator = PapagoTranslator(client_id, client_secret)
     error_occured = False
 
     if 'papago_trans' in df.columns:
@@ -103,6 +116,7 @@ def papago_translate(df):
     else:
         translations = []
         start_idx = 0
+
     for text in tqdm(df['en'][start_idx:]):
         if error_occured:
             print("Error Occured: Papago")
@@ -135,8 +149,14 @@ def google_translate(df):
     translator = GoogleTranslator()
     error_occurred = False
 
-    translations = []
-    for text in tqdm(df['en']):
+    if 'google_trans' in df.columns:
+        translations = df['google_trans'].dropna().tolist()
+        start_idx = df['google_trans'].isnull().idxmax()
+    else:
+        translations = []
+        start_idx = 0
+
+    for text in tqdm(df['en'][start_idx:]):
         if error_occurred:
             print("Error Occured: Google")
             translations.extend([None] * (len(df['en']) - len(translations)))
@@ -155,7 +175,7 @@ def google_translate(df):
     return df
 
 
-def deepl_translate(df):
+def deepl_translate(df, client_key=DEEPL_CLIENT_KEY_0):
     """
     Translate English text to Korean using the DeepL translation service and update the DataFrame.
 
@@ -165,11 +185,17 @@ def deepl_translate(df):
     Returns:
     - df (DataFrame): Updated DataFrame with the 'deepl_trans' column containing Korean translations.
     """
-    translator = DeeplTranslator(DEEPL_CLIENT_KEY)
+    translator = DeeplTranslator(client_key)
     error_occurred = False
 
-    translations = []
-    for text in tqdm(df['en']):
+    if 'deepl_trans' in df.columns:
+        translations = df['deepl_trans'].dropna().tolist()
+        start_idx = df['deepl_trans'].isnull().idxmax()
+    else:
+        translations = []
+        start_idx = 0
+
+    for text in tqdm(df['en'][start_idx:]):
         if error_occurred:
             print("Error Occured: DeepL")
             translations.extend([None] * (len(df['en']) - len(translations)))
@@ -226,15 +252,38 @@ if __name__ == '__main__':
     # eval_df = translate_dataset(save_path)
     # eval_df.to_csv(save_path, index=False)
 
-    # # papago continuous inference
-    # eval_path = '../results/test_tiny_uniform100_inferenced.csv'
-    # eval_df = pd.read_csv(eval_path)
-    # eval_df = papago_translate(eval_df)
-    # eval_df.to_csv('../results/test_tiny_uniform100_inferenced.csv', index=False)
+    papago_clients = [
+        (PAPAGO_CLIENT_ID_0, PAPAGO_CLIENT_SECRET_0), # 세형
+        (PAPAGO_CLIENT_ID_1, PAPAGO_CLIENT_SECRET_1), # 민재님
+        (PAPAGO_CLIENT_ID_2, PAPAGO_CLIENT_SECRET_2), # 지석님
+        (PAPAGO_CLIENT_ID_3, PAPAGO_CLIENT_SECRET_3), # 현경님
+        (PAPAGO_CLIENT_ID_4, PAPAGO_CLIENT_SECRET_4), # 성환님
+        (PAPAGO_CLIENT_ID_5, PAPAGO_CLIENT_SECRET_5), # 보원님
+    ]
+    deepl_clients = [
+        DEEPL_CLIENT_KEY_0, # 세형
+        DEEPL_CLIENT_KEY_1, # 성환님
+    ]
 
     # inference again...
-    eval_path = '../../translation_datasets/flores_101/test_flores.csv'
-    save_path = '../results/test_flores_inferenced.csv'
-    eval_df = pd.read_csv(eval_path)
-    eval_df = google_translate(eval_df)
-    eval_df.to_csv(save_path, index=False)
+    # papago
+    eval_path = '../results/test_tiny_uniform100_inferenced.csv'
+    save_path = '../results/test_tiny_uniform100_inferenced.csv'
+    for client in papago_clients:
+        eval_df = pd.read_csv(eval_path)
+        eval_df = papago_translate(eval_df, client_id=client[0], client_secret=client[1])
+        eval_df.to_csv(save_path, index=False)
+
+    # # deepl
+    # eval_path = '../results/test_tiny_uniform100_inferenced.csv'
+    # save_path = '../results/test_tiny_uniform100_inferenced.csv'
+    # eval_df = pd.read_csv(eval_path)
+    # eval_df = deepl_translate(eval_df, client_key=DEEPL_CLIENT_KEY_1)
+    # eval_df.to_csv(save_path, index=False)
+
+    # # google
+    # eval_path = '../../translation_datasets/aihub_integration/uniform_for_evaluation/test_tiny_uniform100.csv'
+    # save_path = '../results/test_tiny_uniform100_inferenced.csv'
+    # eval_df = pd.read_csv(eval_path)
+    # eval_df = google_translate(eval_df)
+    # eval_df.to_csv(save_path, index=False)
