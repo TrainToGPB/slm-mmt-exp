@@ -213,17 +213,13 @@ def train(args):
         preds = np.where(preds != -100, preds, tokenizer.pad_token_id)
         labels = np.where(labels != -100, labels, tokenizer.pad_token_id)
 
-        print(preds.shape)
-        print(preds)
-        print(labels.shape)
-        print(labels)
-
         decoded_labels = tokenizer.batch_decode(labels, skip_special_tokens=True)
         decoded_preds = tokenizer.batch_decode(preds, skip_special_tokens=True)
         decoded_preds, decoded_labels = postprocess_text(decoded_preds, decoded_labels)
 
-        print(decoded_labels[0])
-        print(decoded_preds[0])
+        for decoded_label, decoded_pred in zip(decoded_labels[:10], decoded_preds[:10]):
+            print(decoded_label)
+            print(decoded_pred)
 
         result = metric.compute(references=decoded_labels, predictions=decoded_preds)
         result = {"SacreBLEU": result["score"]}
