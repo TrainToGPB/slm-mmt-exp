@@ -31,7 +31,19 @@ def load_model_and_tokenizer(
         bnb_config,
         lora_config,
     ):
+    """
+    Load a pre-trained language model and tokenizer with optional quantization and LoRA configuration.
 
+    Parameters:
+    - plm_name (str): Pre-trained language model name.
+    - max_length (int): Maximum sequence length for tokenization.
+    - bnb_config (BitsAndBytesConfig): Configuration for quantization.
+    - lora_config (LoraConfig): Configuration for LoRA adaptation.
+
+    Returns:
+    - model (PreTrainedModel): Loaded pre-trained language model.
+    - tokenizer (PreTrainedTokenizer): Loaded tokenizer.
+    """
     model = AutoModelForCausalLM.from_pretrained(
         plm_name,
         quantization_config=bnb_config,
@@ -60,6 +72,19 @@ def load_model_and_tokenizer(
 
 
 def calculate_warmup_steps(epochs, dataset_size, batch_size, gradient_accumulation_steps, warmup_ratio):
+    """
+    Calculate the number of warm-up steps for training.
+
+    Parameters:
+    - epochs (int): Number of training epochs.
+    - dataset_size (int): Size of the training dataset.
+    - batch_size (int): Batch size used for training.
+    - gradient_accumulation_steps (int): Number of steps to accumulate gradients.
+    - warmup_ratio (float): Ratio of total steps for warm-up.
+
+    Returns:
+    - int: Number of warm-up steps.
+    """
     steps_per_epoch = (dataset_size / batch_size)
     total_steps = epochs * steps_per_epoch / gradient_accumulation_steps
     total_steps_per_device = total_steps / torch.cuda.device_count()
@@ -68,12 +93,28 @@ def calculate_warmup_steps(epochs, dataset_size, batch_size, gradient_accumulati
 
 
 def postprocess_text(preds, labels):
+    """
+    Post-process predicted and label texts.
+
+    Parameters:
+    - preds (List[str]): List of predicted texts.
+    - labels (List[str]): List of label texts.
+
+    Returns:
+    - Tuple[List[str], List[List[str]]]: Post-processed predicted and label texts.
+    """
     preds = [pred.strip() for pred in preds]
     labels = [[label.strip()] for label in labels]
     return preds, labels
 
 
 def train(args):
+    """
+    Train a sequence-to-sequence language model with optional quantization and LoRA adaptation.
+
+    Parameters:
+    - args: Parsed command-line arguments for training.
+    """
     set_seed(args.seed)
 
     compute_dtype = getattr(torch, args.bnb_4bit_compute_dtype)
