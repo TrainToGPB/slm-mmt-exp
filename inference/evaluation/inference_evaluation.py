@@ -30,9 +30,9 @@ def calculate_sentence_bleu(reference, candidate):
     - candidate (str): Candidate sentence.
 
     Returns:
-    - bleu (float): BLEU score (percentage).
+    - bleu (float): BLEU score.
     """
-    bleu = sentence_bleu([list(reference.split())], list(candidate.split()))
+    bleu = sentence_bleu([reference.split()], candidate.split())
     return bleu * 100
 
 
@@ -45,7 +45,7 @@ def calculate_bleu(eval_df, column_name):
     - column_name (str): Name of the column to be evaluated.
 
     Returns:
-    - bleu (float): BLEU score (percentage).
+    - bleu (float): BLEU score.
     """
     references = eval_df['ko'].apply(lambda x: [x]).tolist()
     candidates = eval_df[column_name].tolist()
@@ -62,8 +62,8 @@ def calculate_sentence_rouge(reference, candidate):
     - candidate (str): Candidate sentence.
 
     Returns:
-    - rouge_1 (float): ROUGE-1 score (percentage).
-    - rouge_2 (float): ROUGE-2 score (percentage).
+    - rouge_1 (float): ROUGE-1 score.
+    - rouge_2 (float): ROUGE-2 score.
     """
     rouge = Rouge()
     rouge_scores = rouge.get_scores(candidate, reference)
@@ -119,6 +119,28 @@ def calculate_wer(eval_df, column_name):
     return wer
 
 
+def calculate_sentence_sacrebleu(reference, candidate, tokenizer_name='gogamza/kobart-base-v2'):
+    """
+    Calculate the sacrebleu score for a single sentence pair.
+
+    Parameters:
+    - reference (str): Reference sentence.
+    - candidate (str): Candidate sentence.
+    - tokenizer_name (str, optional): Name of the tokenizer. Default is 'gogamza/kobart-base-v2'.
+
+    Returns:
+    - sacrebleu (float): sacrebleu score for the given sentence pair.
+    """
+    tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
+
+    reference_tokens = tokenizer.tokenize(reference)
+    candidate_tokens = tokenizer.tokenize(candidate)
+
+    sacrebleu = sentence_bleu([reference_tokens], candidate_tokens) * 100
+    
+    return sacrebleu
+
+
 def calculate_sacrebleu(eval_df, column_name, tokenizer_name='gogamza/kobart-base-v2'):
     """
     Calculate the sacrebleu score for a given column in the evaluation dataframe.
@@ -129,7 +151,7 @@ def calculate_sacrebleu(eval_df, column_name, tokenizer_name='gogamza/kobart-bas
     - tokenizer_name (str, optional): Name of the tokenizer. Default is 'gogamza/kobart-base-v2'.
 
     Returns:
-    - sacrebleu (float): sacrebleu score (percentage).
+    - sacrebleu (float): sacrebleu score.
     """
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
 
@@ -248,10 +270,8 @@ if __name__ == '__main__':
     papago_trans: 네이버 파파고 API (현재 개수 미달)
     google_trans: 구글 번역 API
     deepl_trans: 딥엘 API
-    opus_trans: Helsinki-NLP/opus-mt-tc-big-en-ko (HuggingFace)
     mbart_trans: facebook/mbart-large-50-many-to-many-mmt (HuggingFace)
     nllb-600m_trans: facebook/nllb-200-distilled-600M (HuggingFace)
-    nllb-1.3b_trans: facebook/nllb-200-distilled-1.3B (HuggingFace)
     madlad_trans: google/madlad400-3b-mt (HuggingFace)
 
     [METRIC_LIST]
