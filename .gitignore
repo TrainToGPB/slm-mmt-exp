@@ -191,7 +191,7 @@ models/
 
 # results
 results/
-*.yaml
+# *.yaml
 *.out
 
 # wandb
