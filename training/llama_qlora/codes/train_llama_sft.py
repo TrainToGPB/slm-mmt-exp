@@ -1,7 +1,6 @@
 # built-in
 import os
 import sys
-os.environ['CUDA_VISIBLE_DEVICES'] = '2,3'
 os.environ['TOKENIZERS_PARALLELISM'] = 'false'
 
 # third-party
