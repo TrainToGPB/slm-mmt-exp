@@ -209,5 +209,5 @@ if __name__ == '__main__':
     print(f"Inference model: {args.model_type.upper()}")
 
     # inference sentence
-    translation = inference_single(args.model_type, args.en_text, DEVICE)
-    print(translation)
+    print(f"원본 영어 문장: {args.en_text}")
+    print(f"번역 한글 문장: {inference_single(args.model_type, args.en_text, DEVICE)}")

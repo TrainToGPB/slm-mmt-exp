@@ -249,4 +249,8 @@ if __name__ == '__main__':
     )
 
     args = parser.parse_args()
-    print(translate_sentence(args.en_text, api_type=args.api_type))
+    print(f"Inference API: {args.api_type.upper()}")
+
+    # inference sentence
+    print(f"원본 영어 문장: {args.en_text}")
+    print(f"번역 한글 문장: {translate_sentence(args.en_text, api_type=args.api_type)}")
