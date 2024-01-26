@@ -1,6 +1,6 @@
 # built-in
 import os
-os.environ['CUDA_VISIBLE_DEVICES'] = '2,3'
+os.environ['CUDA_VISIBLE_DEVICES'] = '0,1'
 import sys
 from tqdm import tqdm
 
@@ -13,6 +13,7 @@ from transformers import MarianMTModel, MarianTokenizer
 from transformers import MBartForConditionalGeneration, MBart50Tokenizer
 from transformers import M2M100ForConditionalGeneration, NllbTokenizer
 from transformers import T5ForConditionalGeneration, T5Tokenizer
+from transformers import BitsAndBytesConfig
 from peft import PeftModel
 
 # custom
@@ -63,10 +64,30 @@ def load_model_and_tokenizer(model_type):
         tokenizer = AutoTokenizer.from_pretrained(plm_name)
     elif model_type == 'llama-aihub-qlora':
         plm_name = 'beomi/open-llama-2-ko-7b'
-        lora_path = '../../training/llama_qlora/models/sft'
-        model = AutoModelForCausalLM.from_pretrained(plm_name, torch_dtype=torch.bfloat16)
-        model = PeftModel.from_pretrained(model, lora_path, torch_dtype=torch.bfloat16)
+        lora_path = '../../training/llama_qlora/models/sft' # HuggingFace에 업로드 필요
+        bnb_config = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_quant_type='nf4',
+            bnb_4bit_compute_dtype=torch.bfloat16,
+            bnb_4bit_use_double_quant=True
+        )
+        torch_dtype = torch.bfloat16
+
+        model = AutoModelForCausalLM.from_pretrained(
+            plm_name, 
+            quantization_config=bnb_config, 
+            torch_dtype=torch_dtype
+        )
+        model = PeftModel.from_pretrained(
+            model, 
+            lora_path, 
+            torch_dtype=torch_dtype
+        )
+
         tokenizer = AutoTokenizer.from_pretrained(plm_name)
+        tokenizer.pad_token = tokenizer.eos_token
+        tokenizer.padding_side = 'right'
+        tokenizer.model_max_length = 768
 
     return model, tokenizer
 
@@ -158,30 +179,36 @@ def inference_single(model_type, text, device):
 
 
 if __name__ == '__main__':
+    import argparse
     """
-    [MODEL_TYPE]
-    - opus
+    [model_type]
     - mbart
     - nllb-600m
-    - nllb-1.3b
     - madlad
-    - mbart-aihub
-    - llama-aihub-qlora
+    - mbart-aihub (X)
+    - llama-aihub-qlora (X)
     """
-    SOURCE_COLUMN = "en"
-    EVAL_PATH = "../results/test_tiny_uniform100_inferenced.csv"
-    SAVE_PATH = "../results/test_tiny_uniform100_inferenced.csv"
     DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print("DEVICE:", DEVICE)
 
-    # model_types = ['mbart', 'nllb-600m', 'madlad']
-    model_types = ['llama-aihub-qlora']
-    for MODEL_TYPE in model_types:
-        print(f"Inference model: {MODEL_TYPE.upper()}")
-        TARGET_COLUMN = MODEL_TYPE + "_trans"
-        inference(MODEL_TYPE, SOURCE_COLUMN, TARGET_COLUMN, EVAL_PATH, SAVE_PATH, DEVICE)
+    parser = argparse.ArgumentParser(description='Inference Script')
+    parser.add_argument(
+        '--model_type', 
+        type=str, 
+        choices=['opus', 'mbart', 'nllb-600m', 'nllb-1.3b', 'madlad'], # mbart-aihub, llama, llama-quant, llama-aihub-qlora 추가 예정
+        default='mbart', 
+        help='Type of the model to use for inference'
+    )
+    parser.add_argument(
+        '--en_text', 
+        type=str, 
+        default="NMIXX is a South Korean girl group that made a comeback on January 15, 2024 with their new song 'DASH'.",
+        help='English text to be translated'
+    )
 
-        # TEXT_EN = "NMIXX is a South Korean girl group that made a comeback on January 15, 2024 with their new song 'DASH'."
-        # TEXT_EN = "When the dish-returning robot brings the empty dish to the washing robot, it starts to wash the dishes."
-        # translation = inference_single(MODEL_TYPE, TEXT_EN, DEVICE)
-        # print(translation)
+    args = parser.parse_args()
+    print(f"Inference model: {args.model_type.upper()}")
+
+    # inference sentence
+    translation = inference_single(args.model_type, args.en_text, DEVICE)
+    print(translation)
