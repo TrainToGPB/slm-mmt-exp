@@ -8,21 +8,8 @@ from deepl import Translator as DeeplTranslator
 import pandas as pd
 
 sys.path.append('./')
-from api_secret import (
-    PAPAGO_CLIENT_ID_0, 
-    PAPAGO_CLIENT_ID_1, 
-    PAPAGO_CLIENT_ID_2, 
-    PAPAGO_CLIENT_ID_3, 
-    PAPAGO_CLIENT_ID_4, 
-    PAPAGO_CLIENT_ID_5, 
-    PAPAGO_CLIENT_SECRET_0,
-    PAPAGO_CLIENT_SECRET_1,
-    PAPAGO_CLIENT_SECRET_2,
-    PAPAGO_CLIENT_SECRET_3,
-    PAPAGO_CLIENT_SECRET_4,
-    PAPAGO_CLIENT_SECRET_5,
-)
-from api_secret import DEEPL_CLIENT_KEY_0, DEEPL_CLIENT_KEY_1
+from api_secret import PAPAGO_CLIENT_ID, PAPAGO_CLIENT_SECRET
+from api_secret import DEEPL_CLIENT_KEY
 
 
 class PapagoTranslator:
@@ -70,34 +57,35 @@ class PapagoTranslator:
         return translation
 
 
-def translate_single_text(text):
+def translate_sentence(text, api_type='google'):
     """
     Translates a single text using multiple translation services.
 
     Parameters:
     - text (str): Text to be translated.
+    - api_type (str): Translation API to use.
 
     Returns:
-    - papago_translation (str): Translated text using Papago.
-    - google_translation (str): Translated text using Google Translate.
-    - deepl_translation (str): Translated text using DeepL.
+    - translation (str): Translated text using API.
     """
-    # Papago
-    papago_translator = PapagoTranslator(PAPAGO_CLIENT_ID_0, PAPAGO_CLIENT_SECRET_0)
-    papago_translation = papago_translator.translate(src_lang='en', tgt_lang='ko', text=text)
+    assert api_type in ['google', 'papago', 'deepl'], 'Wrong API type'
+    
+    if api_type == 'papago':
+        translator = PapagoTranslator(PAPAGO_CLIENT_ID, PAPAGO_CLIENT_SECRET)
+        translation = translator.translate(src_lang='en', tgt_lang='ko', text=text)
 
-    # Google
-    google_translator = GoogleTranslator()
-    google_translation = google_translator.translate(src='en', dest='ko', text=text).text
+    elif api_type == 'google':
+        translator = GoogleTranslator()
+        translation = translator.translate(src='en', dest='ko', text=text).text
 
-    # DeepL
-    deepl_translator = DeeplTranslator(DEEPL_CLIENT_KEY_0)
-    deepl_translation = deepl_translator.translate_text(target_lang='KO', text=text)
+    elif api_type == 'deepl':
+        translator = DeeplTranslator(DEEPL_CLIENT_KEY)
+        translation = translator.translate_text(target_lang='KO', text=text)
 
-    return papago_translation, google_translation, deepl_translation
+    return translation
 
 
-def papago_translate(df, client_id=PAPAGO_CLIENT_ID_0, client_secret=PAPAGO_CLIENT_SECRET_0):
+def papago_translate(df, client_id=PAPAGO_CLIENT_ID, client_secret=PAPAGO_CLIENT_SECRET):
     """
     Translate English text to Korean using the Papago translation service and update the DataFrame.
 
@@ -175,7 +163,7 @@ def google_translate(df):
     return df
 
 
-def deepl_translate(df, client_key=DEEPL_CLIENT_KEY_0):
+def deepl_translate(df, client_key=DEEPL_CLIENT_KEY):
     """
     Translate English text to Korean using the DeepL translation service and update the DataFrame.
 
@@ -237,53 +225,28 @@ def translate_dataset(df_path):
 
 
 if __name__ == '__main__':
+    import argparse
     """
-    [EVAL_PATH]
-    AI Hub Integrated Uniform 100 (Total 800): ../../translation_datasets/aihub_integration/uniform_for_evaluation/test_tiny_uniform100.csv
-    Flores-101 (Total 1012): ../../translation_datasets/flores_101/test_flores.csv
-
-    [SAVE_PATH]
-    AI Hub Integrated Uniform 100 (Total 800, also continuous eval path for papago): ../results/test_tiny_uniform100_inferenced.csv
-    Flores-101 (Total 1012, also continuous eval path for papago): ../results/test_flores_inferenced.csv
+    [api_type]
+    - google (No Authentication)
+    - papago (ID & Secret)
+    - deepl (Key)
     """
-    # # dataset inference
-    # eval_path = '../../translation_datasets/flores_101/test_flores.csv'
-    # save_path = '../results/test_flores_inferenced.csv'
-    # eval_df = translate_dataset(save_path)
-    # eval_df.to_csv(save_path, index=False)
+    # inference sentence
+    parser = argparse.ArgumentParser(description='Inference Script')
+    parser.add_argument(
+        '--api_type', 
+        type=str, 
+        choices=['google', 'papago', 'deepl'],
+        default='google', 
+        help='Type of the model to use for inference'
+    )
+    parser.add_argument(
+        '--en_text', 
+        type=str, 
+        default="NMIXX is a South Korean girl group that made a comeback on January 15, 2024 with their new song 'DASH'.",
+        help='English text to be translated'
+    )
 
-    papago_clients = [
-        (PAPAGO_CLIENT_ID_0, PAPAGO_CLIENT_SECRET_0), # 세형
-        (PAPAGO_CLIENT_ID_1, PAPAGO_CLIENT_SECRET_1), # 민재님
-        (PAPAGO_CLIENT_ID_2, PAPAGO_CLIENT_SECRET_2), # 지석님
-        (PAPAGO_CLIENT_ID_3, PAPAGO_CLIENT_SECRET_3), # 현경님
-        (PAPAGO_CLIENT_ID_4, PAPAGO_CLIENT_SECRET_4), # 성환님
-        (PAPAGO_CLIENT_ID_5, PAPAGO_CLIENT_SECRET_5), # 보원님
-    ]
-    deepl_clients = [
-        DEEPL_CLIENT_KEY_0, # 세형
-        DEEPL_CLIENT_KEY_1, # 성환님
-    ]
-
-    # inference again...
-    # papago
-    eval_path = '../results/test_tiny_uniform100_inferenced.csv'
-    save_path = '../results/test_tiny_uniform100_inferenced.csv'
-    for client in papago_clients:
-        eval_df = pd.read_csv(eval_path)
-        eval_df = papago_translate(eval_df, client_id=client[0], client_secret=client[1])
-        eval_df.to_csv(save_path, index=False)
-
-    # # deepl
-    # eval_path = '../results/test_tiny_uniform100_inferenced.csv'
-    # save_path = '../results/test_tiny_uniform100_inferenced.csv'
-    # eval_df = pd.read_csv(eval_path)
-    # eval_df = deepl_translate(eval_df, client_key=DEEPL_CLIENT_KEY_1)
-    # eval_df.to_csv(save_path, index=False)
-
-    # # google
-    # eval_path = '../../translation_datasets/aihub_integration/uniform_for_evaluation/test_tiny_uniform100.csv'
-    # save_path = '../results/test_tiny_uniform100_inferenced.csv'
-    # eval_df = pd.read_csv(eval_path)
-    # eval_df = google_translate(eval_df)
-    # eval_df.to_csv(save_path, index=False)
+    args = parser.parse_args()
+    print(translate_sentence(args.en_text, api_type=args.api_type))
