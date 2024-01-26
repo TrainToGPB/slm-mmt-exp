@@ -1,10 +1,10 @@
 # built-in
-import os
-import sys
+import random
 from tqdm import tqdm
 
 # third-party
 import torch
+import numpy as np
 import pandas as pd
 from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
 from transformers import AutoModelForCausalLM
@@ -15,9 +15,25 @@ from transformers import T5ForConditionalGeneration, T5Tokenizer
 from transformers import BitsAndBytesConfig
 from peft import PeftModel
 
-# custom
-sys.path.append('../../../')
-from custom_utils.training_utils import set_seed
+
+def set_seed(SEED=42):
+    """
+    Set the random seeds for reproducibility in a PyTorch environment.
+
+    Parameters:
+    - SEED (int, optional): Seed value to be used for random number generation. Default is 42.
+
+    Usage:
+    Call this function before running any code that involves random number generation to ensure reproducibility.
+
+    Example:
+    set_seed(123)
+    """
+    random.seed(SEED)
+    np.random.seed(SEED)
+    torch.manual_seed(SEED)
+    torch.cuda.manual_seed(SEED)
+    torch.cuda.manual_seed_all(SEED)
 
 
 def load_model_and_tokenizer(model_type):

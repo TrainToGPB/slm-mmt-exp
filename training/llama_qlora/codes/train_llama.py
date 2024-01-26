@@ -1,6 +1,7 @@
 # built-in
 import os
 import sys
+import random
 os.environ['TOKENIZERS_PARALLELISM'] = 'false'
 
 # third-party
@@ -20,10 +21,31 @@ import bitsandbytes as bnb
 import torch.distributed.checkpoint as DCP
 
 # custom
-sys.path.append('../../../../')
-from custom_utils.training_utils import set_seed
-from custom_utils.general_secret import WANDB_CLIENT_KEY
-from custom_utils.argument import parse_arguments_llama
+sys.path.append('./')
+sys.path.append('../')
+sys.path.append('../../')
+from wandb_secret import WANDB_CLIENT_KEY
+from argument import parse_arguments_llama
+
+
+def set_seed(SEED=42):
+    """
+    Set the random seeds for reproducibility in a PyTorch environment.
+
+    Parameters:
+    - SEED (int, optional): Seed value to be used for random number generation. Default is 42.
+
+    Usage:
+    Call this function before running any code that involves random number generation to ensure reproducibility.
+
+    Example:
+    set_seed(123)
+    """
+    random.seed(SEED)
+    np.random.seed(SEED)
+    torch.manual_seed(SEED)
+    torch.cuda.manual_seed(SEED)
+    torch.cuda.manual_seed_all(SEED)
 
 
 def load_model_and_tokenizer(
