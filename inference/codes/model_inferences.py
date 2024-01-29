@@ -13,6 +13,7 @@ from transformers import MarianMTModel, MarianTokenizer
 from transformers import MBartForConditionalGeneration, MBart50Tokenizer
 from transformers import M2M100ForConditionalGeneration, NllbTokenizer
 from transformers import T5ForConditionalGeneration, T5Tokenizer
+from transformers import BitsAndBytesConfig
 from peft import PeftModel
 
 # custom
@@ -31,7 +32,14 @@ def load_model_and_tokenizer(model_type):
     - model (PreTrainedModel): Loaded pre-trained language model.
     - tokenizer (PreTrainedTokenizer): Loaded tokenizer.
     """
-    assert model_type in ['opus', 'mbart', 'nllb-600m', 'nllb-1.3b', 'madlad', 'mbart-aihub', 'llama-aihub-qlora'], 'Wrong model type'
+    assert model_type in ['opus', 
+                          'mbart', 
+                          'nllb-600m', 
+                          'nllb-1.3b', 
+                          'madlad', 
+                          'mbart-aihub', 
+                          'llama', 
+                          'llama-aihub-qlora'], 'Wrong model type'
 
     # existing translation models
     if model_type == 'opus':
@@ -61,12 +69,34 @@ def load_model_and_tokenizer(model_type):
         plm_name = 'facebook/mbart-large-50'
         model = AutoModelForSeq2SeqLM.from_pretrained(plm_name, state_dict=torch.load(state_dict_path))
         tokenizer = AutoTokenizer.from_pretrained(plm_name)
+    elif model_type == 'llama':
+        plm_name = 'beomi/open-llama-2-ko-7b'
+        model = AutoModelForCausalLM.from_pretrained(plm_name, torch_dtype=torch.bfloat16)
+        tokenizer = AutoTokenizer.from_pretrained(plm_name)
     elif model_type == 'llama-aihub-qlora':
         plm_name = 'beomi/open-llama-2-ko-7b'
         lora_path = '../../training/llama_qlora/models/sft'
-        model = AutoModelForCausalLM.from_pretrained(plm_name, torch_dtype=torch.bfloat16)
-        model = PeftModel.from_pretrained(model, lora_path, torch_dtype=torch.bfloat16)
+        bnb_config = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_quant_type='nf4',
+            bnb_4bit_compute_dtype=torch.bfloat16,
+            bnb_4bit_use_double_quant=True
+        )
+        torch_dtype = torch.bfloat16
+        model = AutoModelForCausalLM.from_pretrained(
+            plm_name, 
+            quantization_config=bnb_config, 
+            torch_dtype=torch_dtype
+        )
+        model = PeftModel.from_pretrained(
+            model, 
+            lora_path, 
+            torch_dtype=torch_dtype
+        )
         tokenizer = AutoTokenizer.from_pretrained(plm_name)
+        tokenizer.pad_token = tokenizer.eos_token
+        tokenizer.padding_side = 'right'
+        tokenizer.model_max_length = 768
 
     return model, tokenizer
 
@@ -90,25 +120,28 @@ def translate(model, tokenizer, text, model_type, device, max_length=512):
 
     if model_type == 'madlad':
         text = ' '.join(['<2ko>', text])
-    elif model_type == 'llama-aihub-qlora':
-        text = ' '.join(['### English:', text, '### 한국어:'])
+    elif model_type == 'llama' or model_type == 'llama-aihub-qlora':
+        text = ' '.join(['Translate below English sentence to Korean sentences.\n- English:', text, '\n- 한국어: '])
 
     if model_type == 'mbart' or model_type == 'mbart-aihub':
         tokenizer.src_lang = 'en_XX'
+        tokenizer.tgt_lang = 'ko_KR'
     elif model_type == 'nllb-600m' or model_type == 'nllb-1.3b':
         tokenizer.src_lang = 'eng_Latn'
 
     inputs = tokenizer(text, return_tensors="pt", max_length=max_length, truncation=True)
     inputs = {key: value.to(device) for key, value in inputs.items()}
 
-    if model_type == 'opus' or model_type == 'madlad' or model_type == 'llama-aihub-qlora':
+    if model_type == 'opus' or model_type == 'madlad' or model_type == 'llama' or model_type == 'llama-aihub-qlora':
         outputs = model.generate(**inputs, max_length=max_length)
     elif model_type == 'mbart' or model_type == 'mbart-aihub':
-        outputs = model.generate(**inputs, max_length=max_length, forced_bos_token_id=tokenizer.lang_code_to_id['ko_KR'])
+        outputs = model.generate(**inputs, max_length=max_length, forced_bos_token_id=tokenizer.lang_code_to_id['ko_KR'], tgt_lang='ko_KR')
     elif model_type == 'nllb-600m' or model_type == 'nllb-1.3b':
         outputs = model.generate(**inputs, max_length=max_length, forced_bos_token_id=tokenizer.lang_code_to_id['kor_Hang'])
     
-    translated_text = tokenizer.batch_decode(outputs, skip_special_tokens=True)[0]
+    input_len = len(inputs['input_ids'].squeeze()) if model_type == 'llama' or model_type == 'llama-aihub-qlora' else 0
+
+    translated_text = tokenizer.decode(outputs[0][input_len:], skip_special_tokens=True)
 
     return translated_text
 
@@ -175,13 +208,15 @@ if __name__ == '__main__':
     print("DEVICE:", DEVICE)
 
     # model_types = ['mbart', 'nllb-600m', 'madlad']
-    model_types = ['llama-aihub-qlora']
+    model_types = ['llama']
     for MODEL_TYPE in model_types:
         print(f"Inference model: {MODEL_TYPE.upper()}")
-        TARGET_COLUMN = MODEL_TYPE + "_trans"
-        inference(MODEL_TYPE, SOURCE_COLUMN, TARGET_COLUMN, EVAL_PATH, SAVE_PATH, DEVICE)
 
-        # TEXT_EN = "NMIXX is a South Korean girl group that made a comeback on January 15, 2024 with their new song 'DASH'."
-        # TEXT_EN = "When the dish-returning robot brings the empty dish to the washing robot, it starts to wash the dishes."
-        # translation = inference_single(MODEL_TYPE, TEXT_EN, DEVICE)
-        # print(translation)
+        # inference sentence
+        TEXT_EN = "NMIXX is a South Korean girl group that made a comeback on January 15, 2024 with their new song 'DASH'."
+        translation = inference_single(MODEL_TYPE, TEXT_EN, DEVICE)
+        print(translation)
+
+        # # inference dataset
+        # TARGET_COLUMN = MODEL_TYPE + "_trans"
+        # inference(MODEL_TYPE, SOURCE_COLUMN, TARGET_COLUMN, EVAL_PATH, SAVE_PATH, DEVICE)
