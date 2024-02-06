@@ -1,6 +1,7 @@
 # built-in
 import os
 os.environ['CUDA_VISIBLE_DEVICES'] = '2,3'
+import re
 import sys
 from tqdm import tqdm
 
@@ -93,8 +94,12 @@ def load_model_and_tokenizer(model_type):
             lora_path, 
             torch_dtype=torch_dtype
         )
-        tokenizer = AutoTokenizer.from_pretrained(plm_name)
-        tokenizer.pad_token = tokenizer.eos_token
+        tokenizer = AutoTokenizer.from_pretrained(plm_name, trust_remote_code=True)
+        tokenizer.pad_token = "</s>"
+        tokenizer.pad_token_id = 2
+        tokenizer.eos_token = "<|endoftext|>"
+        tokenizer.eos_token_id = 46332
+        tokenizer.add_eos_token = True
         tokenizer.padding_side = 'right'
         tokenizer.model_max_length = 768
 
@@ -121,7 +126,7 @@ def translate(model, tokenizer, text, model_type, device, max_length=512):
     if model_type == 'madlad':
         text = ' '.join(['<2ko>', text])
     elif model_type == 'llama' or model_type == 'llama-aihub-qlora':
-        text = ' '.join(['Translate below English sentence to Korean sentences.\n- English:', text, '\n- 한국어: '])
+        text = f"### English: {text}\n### 한국어: "
 
     if model_type == 'mbart' or model_type == 'mbart-aihub':
         tokenizer.src_lang = 'en_XX'
@@ -132,16 +137,20 @@ def translate(model, tokenizer, text, model_type, device, max_length=512):
     inputs = tokenizer(text, return_tensors="pt", max_length=max_length, truncation=True)
     inputs = {key: value.to(device) for key, value in inputs.items()}
 
-    if model_type == 'opus' or model_type == 'madlad' or model_type == 'llama' or model_type == 'llama-aihub-qlora':
+    if model_type == 'opus' or model_type == 'madlad' or model_type == 'llama':
         outputs = model.generate(**inputs, max_length=max_length)
+    elif model_type == 'llama-aihub-qlora':
+        outputs = model.generate(**inputs, max_length=max_length, eos_token_id=46332)
     elif model_type == 'mbart' or model_type == 'mbart-aihub':
         outputs = model.generate(**inputs, max_length=max_length, forced_bos_token_id=tokenizer.lang_code_to_id['ko_KR'], tgt_lang='ko_KR')
     elif model_type == 'nllb-600m' or model_type == 'nllb-1.3b':
         outputs = model.generate(**inputs, max_length=max_length, forced_bos_token_id=tokenizer.lang_code_to_id['kor_Hang'])
     
-    input_len = len(inputs['input_ids'].squeeze()) if model_type == 'llama' or model_type == 'llama-aihub-qlora' else 0
-
+    input_len = len(inputs['input_ids'].squeeze()) if 'llama' in model_type else 0
+    
     translated_text = tokenizer.decode(outputs[0][input_len:], skip_special_tokens=True)
+    translated_text = re.sub(r'\s+', ' ', translated_text)
+    translated_text = translated_text.strip()
 
     return translated_text
 
@@ -164,8 +173,10 @@ def inference(model_type, source_column, target_column, eval_path, output_path, 
 
     tqdm.pandas(desc="Translating")
 
+    max_length = 768 if 'llama' in model_type else 512
+
     eval_df = pd.read_csv(eval_path)
-    eval_df[target_column] = eval_df[source_column].progress_apply(lambda text: translate(model, tokenizer, text, model_type, device))
+    eval_df[target_column] = eval_df[source_column].progress_apply(lambda text: translate(model, tokenizer, text, model_type, device, max_length))
     eval_df.to_csv(output_path, index=False)
 
 
@@ -193,30 +204,34 @@ def inference_single(model_type, text, device):
 if __name__ == '__main__':
     """
     [MODEL_TYPE]
-    - opus
+    - opus (제외: 번역 안됨)
     - mbart
     - nllb-600m
-    - nllb-1.3b
+    - nllb-1.3b (제외)
     - madlad
     - mbart-aihub
+    - llama
     - llama-aihub-qlora
     """
-    SOURCE_COLUMN = "en"
-    EVAL_PATH = "../results/test_tiny_uniform100_inferenced.csv"
-    SAVE_PATH = "../results/test_tiny_uniform100_inferenced.csv"
+    source_column = "en"
+    eval_path_AIHUB = "../results/test_tiny_uniform100_inferenced_cleaned.csv"
+    save_path_AIHUB = "../results/test_tiny_uniform100_inferenced_cleaned.csv"
+    eval_path_FLORES = "../results/test_flores_inferenced_cleaned.csv"
+    save_path_FLORES = "../results/test_flores_inferenced_cleaned.csv"
     DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print("DEVICE:", DEVICE)
 
     # model_types = ['mbart', 'nllb-600m', 'madlad']
-    model_types = ['llama']
-    for MODEL_TYPE in model_types:
-        print(f"Inference model: {MODEL_TYPE.upper()}")
+    model_types = ['llama-aihub-qlora']
+    for model_type in model_types:
+        print(f"Inference model: {model_type.upper()}")
 
-        # inference sentence
-        TEXT_EN = "NMIXX is a South Korean girl group that made a comeback on January 15, 2024 with their new song 'DASH'."
-        translation = inference_single(MODEL_TYPE, TEXT_EN, DEVICE)
-        print(translation)
+        # # inference sentence
+        # # text_en = "NMIXX is a South Korean girl group that made a comeback on January 15, 2024 with their new song 'DASH'."
+        # text_en = "Compared to plants, the roots in the basement are thicker and go deep into the ground."
+        # translation = inference_single(model_type, text_en, DEVICE)
+        # print(translation)
 
-        # # inference dataset
-        # TARGET_COLUMN = MODEL_TYPE + "_trans"
-        # inference(MODEL_TYPE, SOURCE_COLUMN, TARGET_COLUMN, EVAL_PATH, SAVE_PATH, DEVICE)
+        # inference dataset
+        target_column = model_type + "_trans"
+        inference(model_type, source_column, target_column, eval_path_AIHUB, save_path_AIHUB, DEVICE)

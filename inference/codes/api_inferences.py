@@ -112,6 +112,9 @@ def papago_translate(df, client_id=PAPAGO_CLIENT_ID_0, client_secret=PAPAGO_CLIE
 
     if 'papago_trans' in df.columns:
         translations = df['papago_trans'].dropna().tolist()
+        if len(translations) == len(df['ko'].tolist()):
+            print("All data are translated already.")
+            return df
         start_idx = df['papago_trans'].isnull().idxmax()
     else:
         translations = []
@@ -267,8 +270,8 @@ if __name__ == '__main__':
 
     # inference again...
     # papago
-    eval_path = '../results/test_tiny_uniform100_inferenced.csv'
-    save_path = '../results/test_tiny_uniform100_inferenced.csv'
+    eval_path = '../results/test_flores_inferenced.csv'
+    save_path = '../results/test_flores_inferenced.csv'
     for client in papago_clients:
         eval_df = pd.read_csv(eval_path)
         eval_df = papago_translate(eval_df, client_id=client[0], client_secret=client[1])

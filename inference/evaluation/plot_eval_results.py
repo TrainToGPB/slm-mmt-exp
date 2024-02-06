@@ -22,7 +22,7 @@ def restructure_metric_column_source(eval_dict, source_list, column_list, metric
         for name in column_list:
             num_dict = {}
             for num in source_list:
-                num_dict[num] = eval_dict[name][num][metric]
+                num_dict[num] = eval_dict[num][name][metric]
             name_dict[name] = num_dict
         new_dict[metric] = name_dict
 
@@ -36,7 +36,7 @@ def restructure_metric_source_column(eval_dict, source_list, column_list, metric
         for num in source_list:
             name_dict = {}
             for name in column_list:
-                name_dict[name] = eval_dict[name][num][metric]
+                name_dict[name] = eval_dict[num][name][metric]
             num_dict[num] = name_dict
         new_dict[metric] = num_dict
 
@@ -55,10 +55,11 @@ def plot_bar(
     #     trans_types = list(eval_dict.keys())
 
     df = pd.DataFrame(list(eval_dict.items()), columns=['Translator', metric_name])
+    df['Translator'] = df['Translator'].apply(lambda x: x.replace('_processed', ''))
     df['Translator'] = df['Translator'].apply(lambda x: x.replace('_trans', ''))
 
     plt.figure(figsize=(15, 8))
-    sns.barplot(x='Translator', y=metric_name, data=df, palette='viridis')
+    sns.barplot(x='Translator', y=metric_name, data=df, palette='rainbow')
     if ylim is not None:
         plt.ylim(ylim[0], ylim[1])
     plt.title(metric_name + ' Scores')
@@ -123,15 +124,17 @@ def plot_bar_groupby_source(
                 continue
             reshaped_data['Dataset'].append(id_to_name[id])
             reshaped_data[metric_name].append(score)
-            reshaped_data['Translator Type'].append(trans_type[:-6])
+            trans_type = trans_type.replace('_processed', '')
+            trans_type = trans_type.replace('_trans', '')
+            reshaped_data['Translator Type'].append(trans_type)
 
     # Create a DataFrame from reshaped dict_single_metric
     df = pd.DataFrame(reshaped_data)
 
     # Use seaborn to create a grouped bar plot
     plt.figure(figsize=(15, 8))
-    viridis_palette = sns.color_palette("viridis", n_colors=len(trans_types))
-    sns.barplot(x='Dataset', y=metric_name, hue='Translator Type', data=df, palette=viridis_palette)
+    palette = sns.color_palette("rainbow", n_colors=len(trans_types))
+    sns.barplot(x='Dataset', y=metric_name, hue='Translator Type', data=df, palette=palette)
     if ylim is not None:
         plt.ylim(ylim[0], ylim[1])
     plt.title(metric_name + ' Scores Grouped by Dataset')
@@ -199,15 +202,17 @@ def plot_bar_groupby_translator(
                 continue
             reshaped_data['Dataset'].append(id_to_name[id])
             reshaped_data[metric_name].append(score)
-            reshaped_data['Translator Type'].append(trans_type[:-6])
+            trans_type = trans_type.replace('_processed', '')
+            trans_type = trans_type.replace('_trans', '')
+            reshaped_data['Translator Type'].append(trans_type)
 
     # Create a DataFrame from reshaped dict_single_metric
     df = pd.DataFrame(reshaped_data)
 
     # Use seaborn to create a grouped bar plot
     plt.figure(figsize=(15, 8))  # Increase figure size
-    rainbow_palette = sns.color_palette("rainbow", n_colors=len(src_types))
-    sns.barplot(x='Translator Type', y=metric_name, hue='Dataset', data=df, palette=rainbow_palette)
+    palette = sns.color_palette("viridis", n_colors=len(src_types))
+    sns.barplot(x='Translator Type', y=metric_name, hue='Dataset', data=df, palette=palette)
     if ylim is not None:
         plt.ylim(ylim[0], ylim[1])
     plt.title(metric_name + ' Scores Grouped by Translator')
@@ -228,49 +233,51 @@ if __name__ == '__main__':
 
     source_list = [111, 124, 125, 126, 563, 71265, 71266, 71382]
     column_list = [
+        'papago_trans',
         'google_trans', 
         'deepl_trans', 
         'mbart_trans', 
         'nllb-600m_trans', 
-        # 'nllb-1.3b_trans',
-        'madlad_trans'
+        'madlad_trans',
+        # 'llama_trans',
+        'mbart-aihub_trans',
+        # 'llama-aihub-qlora_trans'
+        'llama-aihub-qlora_trans_processed',
+        'llama-aihub-qlora-eos_trans_processed'
     ]
-    metric_list_detail = ['bleu', 'sacrebleu'] # 'bleu', 'sacrebleu', 'rouge_1', 'rouge_2', 'wer'
+    metric_list_detail = ['sacrebleu'] # 'bleu', 'sacrebleu', 'rouge_1', 'rouge_2', 'wer'
 
-    yaml_path = '../results/test_tiny_uniform100_metrics.yaml'
-    with open(yaml_path, 'r') as file:
+    yaml_path_aihub = '../results/test_tiny_uniform100_metrics.yaml'
+    yaml_path_flores = '../results/test_flores_metrics.yaml'
+    with open(yaml_path_flores, 'r') as file:
         result = yaml.safe_load(file)
     
-    yaml_path_by_translator = '../results/test_tiny_uniform100_metrics_by_translator.yaml'
-    with open(yaml_path_by_translator, 'r') as file:
-        result_by_translator = yaml.safe_load(file)
+    yaml_path_by_source = '../results/test_tiny_uniform100_metrics_by_source.yaml'
+    with open(yaml_path_by_source, 'r') as file:
+        result_by_source = yaml.safe_load(file)
 
     dict_metric_column = restructure_metric_column(result, column_list, metric_list_detail)
-    dict_metric_column_source = restructure_metric_column_source(result_by_translator, source_list, column_list, metric_list_detail)
+    dict_metric_column_source = restructure_metric_column_source(result_by_source, source_list, column_list, metric_list_detail)
     for metric in metric_list_detail:
         if metric == 'bleu':
-            ylim = (0, 70)
             metric_name = 'BLEU'
         elif metric == 'sacrebleu':
-            ylim = (0, 50)
             metric_name = 'SacreBLEU'
         elif metric == 'rouge_1':
-            ylim = (0, 50)
             metric_name = 'Rouge-1'
         elif metric == 'rouge_2':
-            ylim = (0, 50)
             metric_name = 'Rouge-2'
         elif metric == 'wer':
-            ylim = (0, 80)
             metric_name = 'WER'
 
-        save_path = '../results/chart_images/aihub_' + metric + '.png'
+        save_path_aihub = f'../results/chart_images/aihub_{metric}.png'
+        save_path_flores = f'../results/chart_images/flores_{metric}.png'
         plot_bar(
             dict_metric_column[metric],
             metric_name=metric_name,
-            # ylim=ylim,
+            ylim=(0, 30),
             show_chart=False,
-            save_path=save_path
+            save_path=save_path_flores
         )
 
         # save_path_groupby_source = '../results/chart_images/aihub_' + metric + '_groupby_dataset.png'
@@ -279,7 +286,7 @@ if __name__ == '__main__':
         #     metric_name=metric_name,
         #     trans_types=None,
         #     src_types=None,
-        #     ylim=ylim,
+        #     # ylim=ylim,
         #     show_chart=False,
         #     save_path=save_path_groupby_source
         # )
@@ -290,7 +297,42 @@ if __name__ == '__main__':
         #     metric_name=metric_name,
         #     trans_types=None,
         #     src_types=None,
-        #     ylim=ylim,
+        #     # ylim=ylim,
         #     show_chart=False,
         #     save_path=save_path_groupby_translator
         # )
+
+    def plot_speed(
+            eval_speed, 
+            ylim=(0,4), 
+            show_chart=True, 
+            save_path=None
+        ):
+        df = pd.DataFrame(list(eval_speed.items()), columns=['Translator', 'Speed'])
+        df['Translator'] = df['Translator'].apply(lambda x: x.replace('_trans', ''))
+        df['Translator'] = df['Translator'].apply(lambda x: x.replace('_processed', ''))
+        
+        plt.figure(figsize=(15, 8))
+        sns.barplot(x='Translator', y='Speed', data=df, palette='rainbow')
+        if ylim is not None:
+            plt.ylim(ylim[0], ylim[1])
+        plt.title('Inference Speed (sentence / sec)')
+
+        if show_chart:
+            plt.show()
+
+        if save_path is not None:
+            plt.savefig(save_path, bbox_inches='tight', pad_inches=0.2)
+            plt.close()
+
+    yaml_path_speed_aihub = '../results/test_tiny_uniform100_speeds.yaml'
+    yaml_path_speed_flores = '../results/test_flores_speeds.yaml'
+    with open(yaml_path_speed_aihub, 'r') as file:
+        speed = yaml.safe_load(file)
+    speed = {trans: speed[trans]['speed'] for trans in column_list}
+
+    yaml_path_speed_aihub = '../results/chart_images/aihub_speed.png'
+    yaml_path_speed_flores = '../results/chart_images/flores_speed.png'
+    plot_speed(speed, show_chart=False, save_path=yaml_path_speed_aihub)
+
+

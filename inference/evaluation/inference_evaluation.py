@@ -1,5 +1,6 @@
 import yaml
 
+import evaluate
 import Levenshtein
 import pandas as pd
 from tqdm import tqdm
@@ -48,6 +49,7 @@ def calculate_bleu(eval_df, column_name):
     - bleu (float): BLEU score.
     """
     references = eval_df['ko'].apply(lambda x: [x]).tolist()
+    eval_df[column_name] = eval_df[column_name].fillna(' ')
     candidates = eval_df[column_name].tolist()
     bleu = corpus_bleu(references, candidates)
     return bleu * 100
@@ -84,6 +86,7 @@ def calculate_rouge(eval_df, column_name):
     - rouge_1 (float): Average ROUGE-1 score (percentage).
     - rouge_2 (float): Average ROUGE-2 score (percentage).
     """
+    eval_df[column_name] = eval_df[column_name].fillna(' ')
     rouge_1_scores, rouge_2_scores = zip(*eval_df.apply(lambda row: calculate_sentence_rouge(row['ko'], row[column_name]), axis=1))
     rouge_1, rouge_2 = get_average(rouge_1_scores), get_average(rouge_2_scores)
     return rouge_1, rouge_2
@@ -114,23 +117,13 @@ def calculate_wer(eval_df, column_name):
     Returns:
     - wer (float): Average Word Error Rate.
     """
+    eval_df = eval_df.fillna(' ')
     wer_scores = eval_df.apply(lambda row: calculate_sentence_wer(row['ko'], row[column_name]), axis=1)
     wer = get_average(wer_scores)
     return wer
 
 
-def calculate_sentence_sacrebleu(reference, candidate, tokenizer_name='gogamza/kobart-base-v2'):
-    """
-    Calculate the sacrebleu score for a single sentence pair.
-
-    Parameters:
-    - reference (str): Reference sentence.
-    - candidate (str): Candidate sentence.
-    - tokenizer_name (str, optional): Name of the tokenizer. Default is 'gogamza/kobart-base-v2'.
-
-    Returns:
-    - sacrebleu (float): sacrebleu score for the given sentence pair.
-    """
+def calculate_sentence_token_bleu(reference, candidate, tokenizer_name='gogamza/kobart-base-v2'):
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
 
     reference_tokens = tokenizer.tokenize(reference)
@@ -141,22 +134,11 @@ def calculate_sentence_sacrebleu(reference, candidate, tokenizer_name='gogamza/k
     return sacrebleu
 
 
-def calculate_sacrebleu(eval_df, column_name, tokenizer_name='gogamza/kobart-base-v2'):
-    """
-    Calculate the sacrebleu score for a given column in the evaluation dataframe.
-
-    Parameters:
-    - eval_df (DataFrame): Evaluation dataframe.
-    - column_name (str): Name of the column to be evaluated.
-    - tokenizer_name (str, optional): Name of the tokenizer. Default is 'gogamza/kobart-base-v2'.
-
-    Returns:
-    - sacrebleu (float): sacrebleu score.
-    """
+def calculate_token_bleu(eval_df, column_name, tokenizer_name='gogamza/kobart-base-v2'):
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
 
     references = eval_df['ko'].tolist()
-    candidates = eval_df[column_name].tolist()
+    candidates = eval_df[column_name].fillna(' ').tolist()
 
     references = [tokenizer.tokenize(ref) for ref in references]
     candidates = [tokenizer.tokenize(can) for can in candidates]
@@ -164,6 +146,18 @@ def calculate_sacrebleu(eval_df, column_name, tokenizer_name='gogamza/kobart-bas
     # sacrebleu = evaluate.load('sacrebleu')
     sacrebleu_scores = [sentence_bleu(references, candidate) for candidate in tqdm(candidates)]
     sacrebleu = get_average(sacrebleu_scores) * 100
+
+    return sacrebleu
+
+
+def calculate_sacrebleu(eval_df, column_name):
+    metric = evaluate.load('sacrebleu')
+
+    references = eval_df['ko'].tolist()
+    references = [[ref] for ref in references]
+    candidates = eval_df[column_name].fillna(' ').tolist()
+
+    sacrebleu = metric.compute(references=references, predictions=candidates)['score']
 
     return sacrebleu
 
@@ -181,7 +175,7 @@ def evaluate_all(eval_df, column_list=None, metric_list=None):
     - eval_dict (dict): Dictionary containing evaluation results for each column and metric.
     """
     if column_list is None:
-        column_list = ['google_trans', 'deepl_trans','mbart_trans', 'nllb-600m_trans', 'nllb-1.3b_trans', 'madlad_trans', 'nllb-1.3b_trans']
+        column_list = ['google_trans', 'deepl_trans','mbart_trans', 'mbart-aihub_trans', 'nllb-600m_trans', 'nllb-1.3b_trans', 'madlad_trans', 'nllb-1.3b_trans']
     if metric_list is None:
         metric_list = ['bleu', 'sacrebleu', 'rouge', 'wer']
 
@@ -223,6 +217,7 @@ def evaluate_by_source(eval_df, source_list, column_list, metric_list):
     """
     eval_dict_by_source = dict()
     for src in source_list:
+        print(f'\n[EVALUATING SOURCE: {src}]')
         subset_eval_df = eval_df[eval_df['source'] == src]
         subset_eval_dict = evaluate_all(subset_eval_df, column_list, metric_list)
         eval_dict_by_source[src] = subset_eval_dict
@@ -240,9 +235,14 @@ def print_evaluation_results(eval_dict):
     - Printed results in the console.
     """
     for trans in eval_dict.keys():
-        print(f"[{trans.upper()}]")
+        print(f"[{str(trans).upper()}]")
         for metric_key, metric_value in eval_dict[trans].items():
-            print(f" - {metric_key.upper()}: {metric_value:.2f}")
+            if isinstance(metric_value, dict):
+                print(f" - {str(metric_key).upper()}")
+                for metric, value in metric_value.items():
+                    print(f" - {metric}: {value:.2f}")
+            else:
+                print(f" - {str(metric_key).upper()}: {metric_value:.2f}")
 
 
 def save_eval_results_as_yaml(eval_dict, save_path):
@@ -271,8 +271,13 @@ if __name__ == '__main__':
     google_trans: 구글 번역 API
     deepl_trans: 딥엘 API
     mbart_trans: facebook/mbart-large-50-many-to-many-mmt (HuggingFace)
+    mbart-aihub_trans: facebook/mbart-large-50 (HuggingFace) + AI Hub 한-영 번역 데이터 full-finetuning
     nllb-600m_trans: facebook/nllb-200-distilled-600M (HuggingFace)
+    nllb-1.3b_trans: facebook/nllb-200-distilled-1.3B (HuggingFace)
     madlad_trans: google/madlad400-3b-mt (HuggingFace)
+    llama_trans: beomi/open-llama-ko-7b (HuggingFace)
+    llama-aihub-qlora_trans: beomi/open-llama-ko-7b (HuggingFace) + AI Hub 한-영 번역 데이터 QLoRA finetuning
+    llama-aihub-qlora_trans_processed: llama-aihub-qlora_trans의 수작업 정제 버전
 
     [METRIC_LIST]
     bleu: 
@@ -290,24 +295,56 @@ if __name__ == '__main__':
      - Word Error Rate
      - 번역보다는 음성 인식 task에서 주로 사용
      - 단순하게 generation과 reference 간 단어 단위 오류율로 계산
-    """
-    eval_path = '../results/test_flores_inferenced.csv'
-    eval_df = pd.read_csv(eval_path)
 
-    column_list = ['google_trans', 'deepl_trans', 'mbart_trans', 'nllb-600m_trans', 'nllb-1.3b_trans', 'madlad_trans']
-    metric_list = ['bleu', 'sacrebleu', 'rouge', 'wer'] # bleu, sacrebleu, rouge, wer
-    source_list = [111, 124, 125, 126, 563, 71265, 71266, 71382]
+    [SOURCE_LIST]
+    - 111: 전문분야
+    - 124: 기술과학1
+    - 125: 사회과학
+    - 126: 일반
+    - 563: 산업정보(특허)
+    - 71265: 일상생활 및 구어체
+    - 71266: 기술과학2
+    - 71382: 방송콘텐츠
+    """
+    eval_path_aihub = '../results/test_tiny_uniform100_inferenced.csv'
+    eval_path_flores = '../results/test_flores_inferenced.csv'
+
+    eval_df = pd.read_csv(eval_path_flores)
+
+    column_list = [
+        'papago_trans',
+        'google_trans', 
+        'deepl_trans', 
+        'mbart_trans', 
+        'nllb-600m_trans', 
+        'madlad_trans', 
+        # 'llama_trans',
+        # 'llama-aihub-qlora_trans',
+        'mbart-aihub_trans', 
+        'llama-aihub-qlora_trans_processed',
+        'llama-aihub-qlora-eos_trans_processed',
+    ]
+    metric_list = ['sacrebleu']
+    source_list = [
+        111, 
+        124, 
+        125, 
+        126, 
+        563, 
+        71265, 
+        71266, 
+        71382
+    ]
 
     # evaluate all
+    save_path_aihub = '../results/test_tiny_uniform100_metrics.yaml'
+    save_path_flores = '../results/test_flores_metrics.yaml'
     eval_dict = evaluate_all(eval_df, column_list, metric_list)
     print_evaluation_results(eval_dict)
-
-    save_path = '../results/test_flores_metrics.yaml'
-    save_eval_results_as_yaml(eval_dict, save_path)
+    save_eval_results_as_yaml(eval_dict, save_path_flores)
 
     # # evaluate separately by source (only for aihub dataset)
+    # save_path_by_source_aihub = '../results/test_tiny_uniform100_metrics_by_source.yaml'
     # eval_dict_by_source = evaluate_by_source(eval_df, source_list, column_list, metric_list)
     # print_evaluation_results(eval_dict_by_source)
-
-    # save_path_by_source = '../results/test_tiny_uniform100_metrics_by_source.yaml'
-    # save_eval_results_as_yaml(eval_dict_by_source, save_path_by_source)
+    # save_eval_results_as_yaml(eval_dict_by_source, save_path_by_source_aihub)
