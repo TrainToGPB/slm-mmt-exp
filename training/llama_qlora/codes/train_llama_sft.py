@@ -9,11 +9,14 @@ import torch
 import wandb
 import evaluate
 import numpy as np
+import pandas as pd
+from tqdm import tqdm
+from datasets import Dataset
 from datasets import load_dataset
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from peft import LoraConfig
 from peft import get_peft_model, prepare_model_for_kbit_training
-from trl import SFTTrainer, DataCollatorForCompletionOnlyLM
+from trl import SFTTrainer
 from transformers import TrainingArguments
 from transformers import BitsAndBytesConfig
 
@@ -22,6 +25,7 @@ sys.path.append('../../../../')
 from custom_utils.training_utils import set_seed
 from custom_utils.general_secret import WANDB_CLIENT_KEY
 from custom_utils.argument import parse_arguments_llama
+from data_collator import CustomDataCollatorForCompletionOnlyLM
 
 
 def load_model_and_tokenizer(
@@ -84,6 +88,34 @@ def postprocess_text(preds, labels):
     return preds, labels
 
 
+def drop_long_texts(dataset, tokenizer, max_length=768, len_threshold=700):
+    df = pd.DataFrame(dataset)
+
+    rows_to_drop = []
+    for idx, row in tqdm(df.iterrows(), total=len(df)):
+        text = f"### English: {row['en']}\n### 한국어: {row['ko']}"
+        outputs = tokenizer.encode_plus(
+            text,
+            padding=False,
+            truncation=True,
+            max_length=max_length,
+            return_tensors='pt',
+            return_attention_mask=False,
+            return_length=False
+        )
+        
+        input_len = len(outputs.input_ids.squeeze())
+        if input_len > len_threshold:
+            rows_to_drop.append(idx)
+    
+    df_dropped = df.drop(rows_to_drop)
+    dataset_dropped = Dataset.from_pandas(df_dropped)
+
+    print(f"Dropped (over {len_threshold}): {len(rows_to_drop)}")
+
+    return dataset_dropped
+
+
 def train(args):
     set_seed(args.seed)
 
@@ -126,9 +158,10 @@ def train(args):
         gradient_accumulation_steps=args.gradient_accumulation_steps,
         warmup_ratio=args.warmup_ratio
     )
-    
+
     if args.just_test:
         project_name = 'test'
+        output_dir = '../models/test'
         logging_steps = 1
         eval_steps = 1
         save_steps = 1
@@ -136,11 +169,12 @@ def train(args):
         eval_dataset = dataset['validation'].select(range(10))
     else:
         project_name = args.project_name
+        output_dir = args.output_dir
         logging_steps = args.logging_steps
         eval_steps = warmup_steps
         save_steps = warmup_steps
-        train_dataset = dataset['train']
-        eval_dataset = dataset['validation']
+        train_dataset = drop_long_texts(dataset['train'], tokenizer)
+        eval_dataset = drop_long_texts(dataset['validation'], tokenizer)
 
     wandb.login(
         anonymous='never',
@@ -151,7 +185,7 @@ def train(args):
     wandb.init(project=project_name, name=args.run_name)
 
     training_args = TrainingArguments(
-        output_dir=args.output_dir,
+        output_dir=output_dir,
         dataloader_num_workers=args.dataloader_num_workers,
         per_device_train_batch_size=args.per_device_batch_size,
         per_device_eval_batch_size=args.per_device_batch_size,
@@ -180,7 +214,7 @@ def train(args):
         metric_for_best_model=args.metric_for_best_model,
     )
 
-    data_collator=DataCollatorForCompletionOnlyLM(
+    data_collator=CustomDataCollatorForCompletionOnlyLM(
         # instruction_template='\n'.join([args.instruction, args.en_sign]),
         instruction_template=args.en_sign,
         response_template=args.ko_sign,
@@ -205,9 +239,9 @@ def train(args):
 
     def compute_sacrebleu(p):
         preds, labels = p.predictions[0], p.label_ids
-        print(preds[0])
-        print(labels[0])
-        preds = np.where(preds != -100, preds, tokenizer.pad_token_id)
+        first_non_ignore_indices = np.argmax(labels != -100, axis=1)
+        for i, idx in enumerate(first_non_ignore_indices):
+            preds[i, :idx-1] = tokenizer.pad_token_id
         labels = np.where(labels != -100, labels, tokenizer.pad_token_id)
 
         decoded_labels = tokenizer.batch_decode(labels, skip_special_tokens=True)

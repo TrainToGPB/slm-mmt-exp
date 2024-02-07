@@ -140,7 +140,8 @@ def plot_bar_groupby_source(
     plt.title(metric_name + ' Scores Grouped by Dataset')
 
     # Move legend to the upper-right corner
-    plt.legend(loc='upper right')
+    # plt.legend(loc='upper right')
+    plt.legend(loc='upper center', bbox_to_anchor=(0.5, -0.1), fancybox=True, shadow=True, ncol=len(src_types))
 
     if show_chart:
         plt.show()
@@ -218,7 +219,31 @@ def plot_bar_groupby_translator(
     plt.title(metric_name + ' Scores Grouped by Translator')
 
     # Move legend to the upper-right corner
-    plt.legend(loc='upper right')
+    # plt.legend(loc='upper right')
+    plt.legend(loc='upper center', bbox_to_anchor=(0.5, -0.1), fancybox=True, shadow=True, ncol=len(trans_types))
+
+    if show_chart:
+        plt.show()
+
+    if save_path is not None:
+        plt.savefig(save_path, bbox_inches='tight', pad_inches=0.2)
+        plt.close()
+
+
+def plot_speed(
+        eval_speed, 
+        ylim=(0,4), 
+        show_chart=True, 
+        save_path=None
+    ):
+    df = pd.DataFrame(list(eval_speed.items()), columns=['Translator', 'Speed'])
+    df['Translator'] = df['Translator'].apply(lambda x: x.replace('_trans', ''))
+    
+    plt.figure(figsize=(15, 8))
+    sns.barplot(x='Translator', y='Speed', data=df, palette='rainbow')
+    if ylim is not None:
+        plt.ylim(ylim[0], ylim[1])
+    plt.title('Inference Speed (sentence / sec)')
 
     if show_chart:
         plt.show()
@@ -231,6 +256,18 @@ def plot_bar_groupby_translator(
 if __name__ == '__main__':
     import yaml
 
+    dataset = 'aihub'
+
+    if dataset == 'aihub':
+        yaml_path = '../results/test_tiny_uniform100_metrics.yaml'
+        yaml_path_by_source = '../results/test_tiny_uniform100_metrics_by_source.yaml'
+        yaml_path_speed = '../results/test_tiny_uniform100_speeds.yaml'
+        img_save_path = '../results/chart_images/aihub_speed.png'
+    elif dataset == 'flores':
+        yaml_path = '../results/test_flores_metrics.yaml'
+        yaml_path_speed_flores = '../results/test_flores_speeds.yaml'
+        img_save_path = '../results/chart_images/flores_speed.png'
+
     source_list = [111, 124, 125, 126, 563, 71265, 71266, 71382]
     column_list = [
         'papago_trans',
@@ -241,98 +278,81 @@ if __name__ == '__main__':
         'madlad_trans',
         # 'llama_trans',
         'mbart-aihub_trans',
-        # 'llama-aihub-qlora_trans'
-        'llama-aihub-qlora_trans_processed',
-        'llama-aihub-qlora-eos_trans_processed'
+        'llama-aihub-qlora_trans'
     ]
-    metric_list_detail = ['sacrebleu'] # 'bleu', 'sacrebleu', 'rouge_1', 'rouge_2', 'wer'
+    metric_list_detail = ['sacrebleu', 'bertscore'] # 'bleu', 'sacrebleu', 'rouge_1', 'rouge_2', 'wer', 'bertscore'
 
-    yaml_path_aihub = '../results/test_tiny_uniform100_metrics.yaml'
-    yaml_path_flores = '../results/test_flores_metrics.yaml'
-    with open(yaml_path_flores, 'r') as file:
+    with open(yaml_path, 'r') as file:
         result = yaml.safe_load(file)
-    
-    yaml_path_by_source = '../results/test_tiny_uniform100_metrics_by_source.yaml'
-    with open(yaml_path_by_source, 'r') as file:
-        result_by_source = yaml.safe_load(file)
-
     dict_metric_column = restructure_metric_column(result, column_list, metric_list_detail)
-    dict_metric_column_source = restructure_metric_column_source(result_by_source, source_list, column_list, metric_list_detail)
+    
+    if dataset == 'aihub':
+        with open(yaml_path_by_source, 'r') as file:
+            result_by_source = yaml.safe_load(file)
+        dict_metric_column_source = restructure_metric_column_source(result_by_source, source_list, column_list, metric_list_detail)
+
     for metric in metric_list_detail:
         if metric == 'bleu':
             metric_name = 'BLEU'
+            ylim = (0, 70)
         elif metric == 'sacrebleu':
             metric_name = 'SacreBLEU'
+            ylim = (0, 30)
+            ylim_by_source = (0, 55)
+            ylim_by_translator = (0, 55)
         elif metric == 'rouge_1':
             metric_name = 'Rouge-1'
+            ylim = (0, 40)
         elif metric == 'rouge_2':
             metric_name = 'Rouge-2'
+            ylim = (0, 30)
         elif metric == 'wer':
             metric_name = 'WER'
+            ylim = (0, 100)
+        elif metric == 'bertscore':
+            metric_name = 'BERT-Score'
+            ylim = (70, 100)
+            ylim_by_source = (70, 100)
+            ylim_by_translator = (70, 100)
 
-        save_path_aihub = f'../results/chart_images/aihub_{metric}.png'
-        save_path_flores = f'../results/chart_images/flores_{metric}.png'
+        save_path = f'../results/chart_images/{dataset}_{metric}.png'
         plot_bar(
             dict_metric_column[metric],
             metric_name=metric_name,
-            ylim=(0, 30),
+            ylim=ylim,
             show_chart=False,
-            save_path=save_path_flores
+            save_path=save_path
         )
 
-        # save_path_groupby_source = '../results/chart_images/aihub_' + metric + '_groupby_dataset.png'
-        # plot_bar_groupby_source(
-        #     dict_metric_column_source[metric],
-        #     metric_name=metric_name,
-        #     trans_types=None,
-        #     src_types=None,
-        #     # ylim=ylim,
-        #     show_chart=False,
-        #     save_path=save_path_groupby_source
-        # )
+        if dataset == 'aihub':
+            save_path_groupby_source = f'../results/chart_images/aihub_{metric}_groupby_dataset.png'
+            plot_bar_groupby_source(
+                dict_metric_column_source[metric],
+                metric_name=metric_name,
+                trans_types=None,
+                src_types=None,
+                ylim=ylim_by_source,
+                show_chart=False,
+                save_path=save_path_groupby_source
+            )
 
-        # save_path_groupby_translator = '../results/chart_images/aihub_' + metric + '_groupby_translator.png'
-        # plot_bar_groupby_translator(
-        #     dict_metric_column_source[metric],
-        #     metric_name=metric_name,
-        #     trans_types=None,
-        #     src_types=None,
-        #     # ylim=ylim,
-        #     show_chart=False,
-        #     save_path=save_path_groupby_translator
-        # )
+            save_path_groupby_translator = f'../results/chart_images/aihub_{metric}_groupby_translator.png'
+            plot_bar_groupby_translator(
+                dict_metric_column_source[metric],
+                metric_name=metric_name,
+                trans_types=None,
+                src_types=None,
+                ylim=ylim_by_translator,
+                show_chart=False,
+                save_path=save_path_groupby_translator
+            )
 
-    def plot_speed(
-            eval_speed, 
-            ylim=(0,4), 
-            show_chart=True, 
-            save_path=None
-        ):
-        df = pd.DataFrame(list(eval_speed.items()), columns=['Translator', 'Speed'])
-        df['Translator'] = df['Translator'].apply(lambda x: x.replace('_trans', ''))
-        df['Translator'] = df['Translator'].apply(lambda x: x.replace('_processed', ''))
-        
-        plt.figure(figsize=(15, 8))
-        sns.barplot(x='Translator', y='Speed', data=df, palette='rainbow')
-        if ylim is not None:
-            plt.ylim(ylim[0], ylim[1])
-        plt.title('Inference Speed (sentence / sec)')
+    # with open(yaml_path_speed, 'r') as file:
+    #     speed = yaml.safe_load(file)
+    # speed = {trans: speed[trans]['speed'] for trans in column_list}
 
-        if show_chart:
-            plt.show()
-
-        if save_path is not None:
-            plt.savefig(save_path, bbox_inches='tight', pad_inches=0.2)
-            plt.close()
-
-    yaml_path_speed_aihub = '../results/test_tiny_uniform100_speeds.yaml'
-    yaml_path_speed_flores = '../results/test_flores_speeds.yaml'
-    with open(yaml_path_speed_aihub, 'r') as file:
-        speed = yaml.safe_load(file)
-    speed = {trans: speed[trans]['speed'] for trans in column_list}
-
-    yaml_path_speed_aihub = '../results/chart_images/aihub_speed.png'
-    yaml_path_speed_flores = '../results/chart_images/flores_speed.png'
-    plot_speed(speed, show_chart=False, save_path=yaml_path_speed_aihub)
+    # save_path_speed_aihub = '../results/chart_images/aihub_speed.png'
+    # save_path_speed_flores = '../results/chart_images/flores_speed.png'
+    # plot_speed(speed, show_chart=False, save_path=img_save_path)
 
 

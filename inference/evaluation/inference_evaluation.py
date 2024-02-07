@@ -1,6 +1,7 @@
 import yaml
 
 import evaluate
+import bert_score
 import Levenshtein
 import pandas as pd
 from tqdm import tqdm
@@ -150,6 +151,13 @@ def calculate_token_bleu(eval_df, column_name, tokenizer_name='gogamza/kobart-ba
     return sacrebleu
 
 
+def calculate_sentence_sacrebleu(reference, candidate):
+    metric = evaluate.load('sacrebleu')
+    candidate = candidate if not pd.isna(candidate) else ' '
+    sacrebleu = metric.compute(references=[[reference]], predictions=[candidate])['score']
+    return sacrebleu
+
+
 def calculate_sacrebleu(eval_df, column_name):
     metric = evaluate.load('sacrebleu')
 
@@ -160,6 +168,27 @@ def calculate_sacrebleu(eval_df, column_name):
     sacrebleu = metric.compute(references=references, predictions=candidates)['score']
 
     return sacrebleu
+
+
+def calculate_sentence_bertscore(reference, candidate):
+    reference = [reference]
+    candidate = candidate if candidate else ' '
+    candidate = [candidate]
+
+    _, _, bertscore = bert_score.score(reference, candidate, lang='ko')
+
+    return bertscore.item() * 100
+
+
+def calculate_bertscore(eval_df, column_name):
+    references = eval_df['ko'].tolist()
+    candidates = eval_df[column_name].fillna(' ').tolist()
+
+    _, _, bertscore = bert_score.score(references, candidates, lang='ko')
+
+    avg_bertscore = bertscore.mean().item()
+
+    return avg_bertscore * 100
 
 
 def evaluate_all(eval_df, column_list=None, metric_list=None):
@@ -175,9 +204,9 @@ def evaluate_all(eval_df, column_list=None, metric_list=None):
     - eval_dict (dict): Dictionary containing evaluation results for each column and metric.
     """
     if column_list is None:
-        column_list = ['google_trans', 'deepl_trans','mbart_trans', 'mbart-aihub_trans', 'nllb-600m_trans', 'nllb-1.3b_trans', 'madlad_trans', 'nllb-1.3b_trans']
+        column_list = ['google_trans', 'deepl_trans','mbart_trans', 'nllb-600m_trans', 'nllb-1.3b_trans', 'madlad_trans']
     if metric_list is None:
-        metric_list = ['bleu', 'sacrebleu', 'rouge', 'wer']
+        metric_list = ['bleu', 'bertscore']
 
     eval_dict = dict()
     for col in column_list:
@@ -196,6 +225,9 @@ def evaluate_all(eval_df, column_list=None, metric_list=None):
         if 'wer' in metric_list:
             mean_wer = calculate_wer(eval_df, col)
             col_dict['wer'] = mean_wer
+        if 'bertscore' in metric_list:
+            mean_bertscore = calculate_bertscore(eval_df, col)
+            col_dict['bertscore'] = mean_bertscore
 
         eval_dict[col] = col_dict
 
@@ -210,7 +242,7 @@ def evaluate_by_source(eval_df, source_list, column_list, metric_list):
     - eval_df (DataFrame): Evaluation dataframe.
     - source_list (list): List of source names.
     - column_list (list): List of column names to be evaluated.
-    - metric_list (list): List of metrics to be calculated ('bleu', 'sacrebleu', 'rouge', 'wer').
+    - metric_list (list): List of metrics to be calculated ('bleu', 'sacrebleu', 'rouge', 'wer', 'bertscore').
 
     Returns:
     - eval_dict_by_source (dict): Dictionary containing evaluation results for each source, column, and metric.
@@ -306,10 +338,17 @@ if __name__ == '__main__':
     - 71266: 기술과학2
     - 71382: 방송콘텐츠
     """
-    eval_path_aihub = '../results/test_tiny_uniform100_inferenced.csv'
-    eval_path_flores = '../results/test_flores_inferenced.csv'
+    dataset = 'flores'
 
-    eval_df = pd.read_csv(eval_path_flores)
+    if dataset == 'aihub':
+        eval_path = '../results/test_tiny_uniform100_inferenced.csv'
+        save_path = '../results/test_tiny_uniform100_metrics.yaml'
+        save_path_by_source = '../results/test_tiny_uniform100_metrics_by_source.yaml'
+    elif dataset == 'flores':
+        eval_path = '../results/test_flores_inferenced.csv'
+        save_path = '../results/test_flores_metrics.yaml'
+
+    eval_df = pd.read_csv(eval_path)
 
     column_list = [
         'papago_trans',
@@ -319,12 +358,10 @@ if __name__ == '__main__':
         'nllb-600m_trans', 
         'madlad_trans', 
         # 'llama_trans',
-        # 'llama-aihub-qlora_trans',
         'mbart-aihub_trans', 
-        'llama-aihub-qlora_trans_processed',
-        'llama-aihub-qlora-eos_trans_processed',
+        'llama-aihub-qlora_trans',
     ]
-    metric_list = ['sacrebleu']
+    metric_list = ['sacrebleu', 'bertscore']
     source_list = [
         111, 
         124, 
@@ -337,14 +374,18 @@ if __name__ == '__main__':
     ]
 
     # evaluate all
-    save_path_aihub = '../results/test_tiny_uniform100_metrics.yaml'
-    save_path_flores = '../results/test_flores_metrics.yaml'
     eval_dict = evaluate_all(eval_df, column_list, metric_list)
     print_evaluation_results(eval_dict)
-    save_eval_results_as_yaml(eval_dict, save_path_flores)
+    save_eval_results_as_yaml(eval_dict, save_path)
 
-    # # evaluate separately by source (only for aihub dataset)
-    # save_path_by_source_aihub = '../results/test_tiny_uniform100_metrics_by_source.yaml'
-    # eval_dict_by_source = evaluate_by_source(eval_df, source_list, column_list, metric_list)
-    # print_evaluation_results(eval_dict_by_source)
-    # save_eval_results_as_yaml(eval_dict_by_source, save_path_by_source_aihub)
+    # evaluate separately by source (only for aihub dataset)
+    if dataset == 'aihub':
+        eval_dict_by_source = evaluate_by_source(eval_df, source_list, column_list, metric_list)
+        print_evaluation_results(eval_dict_by_source)
+        save_eval_results_as_yaml(eval_dict_by_source, save_path_by_source)
+
+    # SacreBLEU는 7.18/100점인데 반해, BERTScore는 89.33/100점
+    # reference = "미국 심장협회의 연구에 따르면 이 행동을 자주 하면 고혈압을 의심해 봐야 한다고 하는데요."
+    # candidate = "美심장협회 연구에 따르면, 이렇게 자주 한다면 고혈압을 의심해야 한다."
+    # score = calculate_sentence_bertscore(reference, candidate)
+    # print(score)

@@ -1,6 +1,6 @@
 # built-in
 import os
-os.environ['CUDA_VISIBLE_DEVICES'] = '2,3'
+os.environ['CUDA_VISIBLE_DEVICES'] = '3'
 import re
 import sys
 from tqdm import tqdm
@@ -66,10 +66,9 @@ def load_model_and_tokenizer(model_type):
     
     # finetuned translation models
     elif model_type == 'mbart-aihub':
-        state_dict_path = '../../training/mbart/models/mbart-baseline-merged.pth'
-        plm_name = 'facebook/mbart-large-50'
-        model = AutoModelForSeq2SeqLM.from_pretrained(plm_name, state_dict=torch.load(state_dict_path))
-        tokenizer = AutoTokenizer.from_pretrained(plm_name)
+        plm_path = '../../training/mbart/models/mbart-full'
+        model = AutoModelForSeq2SeqLM.from_pretrained(plm_path)
+        tokenizer = AutoTokenizer.from_pretrained(plm_path)
     elif model_type == 'llama':
         plm_name = 'beomi/open-llama-2-ko-7b'
         model = AutoModelForCausalLM.from_pretrained(plm_name, torch_dtype=torch.bfloat16)
@@ -140,9 +139,11 @@ def translate(model, tokenizer, text, model_type, device, max_length=512):
     if model_type == 'opus' or model_type == 'madlad' or model_type == 'llama':
         outputs = model.generate(**inputs, max_length=max_length)
     elif model_type == 'llama-aihub-qlora':
+        inputs['input_ids'] = inputs['input_ids'][0][:-1].unsqueeze(dim=0)
+        inputs['attention_mask'] = inputs['attention_mask'][0][:-1].unsqueeze(dim=0)
         outputs = model.generate(**inputs, max_length=max_length, eos_token_id=46332)
     elif model_type == 'mbart' or model_type == 'mbart-aihub':
-        outputs = model.generate(**inputs, max_length=max_length, forced_bos_token_id=tokenizer.lang_code_to_id['ko_KR'], tgt_lang='ko_KR')
+        outputs = model.generate(**inputs, max_length=max_length, forced_bos_token_id=tokenizer.lang_code_to_id['ko_KR'])
     elif model_type == 'nllb-600m' or model_type == 'nllb-1.3b':
         outputs = model.generate(**inputs, max_length=max_length, forced_bos_token_id=tokenizer.lang_code_to_id['kor_Hang'])
     
@@ -151,7 +152,7 @@ def translate(model, tokenizer, text, model_type, device, max_length=512):
     translated_text = tokenizer.decode(outputs[0][input_len:], skip_special_tokens=True)
     translated_text = re.sub(r'\s+', ' ', translated_text)
     translated_text = translated_text.strip()
-
+    print(translated_text)
     return translated_text
 
 
@@ -222,16 +223,17 @@ if __name__ == '__main__':
     print("DEVICE:", DEVICE)
 
     # model_types = ['mbart', 'nllb-600m', 'madlad']
+    # model_types = ['llama-aihub-qlora']
     model_types = ['llama-aihub-qlora']
     for model_type in model_types:
         print(f"Inference model: {model_type.upper()}")
 
         # # inference sentence
         # # text_en = "NMIXX is a South Korean girl group that made a comeback on January 15, 2024 with their new song 'DASH'."
-        # text_en = "Compared to plants, the roots in the basement are thicker and go deep into the ground."
+        # text_en = "The present invention provides clothing for treating the fracture of a pet dog's leg, comprising: an outer cover surrounding the body of the pet dog; a traction belt which can extend along the circumference of the outer cover; and two leg insertion parts which are fixed to both ends of the traction belt, respectively, and into which forelegs or hind legs of the pet dog can be inserted, at least one of the two leg insertion parts being made of a plaster cast."
         # translation = inference_single(model_type, text_en, DEVICE)
         # print(translation)
 
         # inference dataset
         target_column = model_type + "_trans"
-        inference(model_type, source_column, target_column, eval_path_AIHUB, save_path_AIHUB, DEVICE)
+        inference(model_type, source_column, target_column, eval_path_FLORES, save_path_FLORES, DEVICE)
