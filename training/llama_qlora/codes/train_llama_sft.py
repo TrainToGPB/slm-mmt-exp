@@ -238,11 +238,15 @@ def train(args):
 
 
     def compute_sacrebleu(p):
+        IGNORE_INDEX = -100
+
         preds, labels = p.predictions[0], p.label_ids
-        first_non_ignore_indices = np.argmax(labels != -100, axis=1)
+
+        first_non_ignore_indices = np.argmax(labels != IGNORE_INDEX, axis=1)
         for i, idx in enumerate(first_non_ignore_indices):
             preds[i, :idx-1] = tokenizer.pad_token_id
-        labels = np.where(labels != -100, labels, tokenizer.pad_token_id)
+        preds[preds == IGNORE_INDEX] = tokenizer.pad_token_id
+        labels = np.where(labels != IGNORE_INDEX, labels, tokenizer.pad_token_id)
 
         decoded_labels = tokenizer.batch_decode(labels, skip_special_tokens=True)
         decoded_preds = tokenizer.batch_decode(preds, skip_special_tokens=True)
