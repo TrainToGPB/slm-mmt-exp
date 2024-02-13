@@ -1,6 +1,6 @@
 # built-in
 import os
-os.environ['CUDA_VISIBLE_DEVICES'] = '2,3'
+os.environ['CUDA_VISIBLE_DEVICES'] = '0,1'
 os.environ['TOKENIZERS_PARALLELISM'] = 'false'
 import sys
 
@@ -10,7 +10,6 @@ import numpy as np
 import wandb
 import evaluate
 from datasets import load_dataset
-from accelerate import Accelerator
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 from transformers import Seq2SeqTrainer, Seq2SeqTrainingArguments
 from transformers import default_data_collator
@@ -29,7 +28,6 @@ def load_model_and_tokenizer(
         plm_name, 
         bnb_config,
         lora_config,
-        use_gradient_checkpointing,
         src_lang='en_XX', 
         tgt_lang='ko_KR'
     ):
@@ -50,19 +48,6 @@ def load_model_and_tokenizer(
         trust_remote_code=True,
     )
 
-    # if hasattr(model, "enable_input_require_grads"):
-    #     model.enable_input_require_grads()
-    # else:
-    #     def make_inputs_require_grad(module, input, output):
-    #         output.requires_grad_(True)
-    #     model.get_input_embeddings().register_forward_hook(make_inputs_require_grad)
-
-    model = prepare_model_for_kbit_training(
-        model, 
-        use_gradient_checkpointing=use_gradient_checkpointing,
-        gradient_checkpointing_kwargs={"use_reentrant": True}
-    )
-    # model.gradient_checkpointing_enable()
     model = get_peft_model(model, lora_config)
     model.print_trainable_parameters()
 
@@ -130,7 +115,6 @@ def train(args):
         args.plm_name, 
         bnb_config,
         lora_config,
-        args.gradient_checkpointing,
         args.src_lang, 
         args.tgt_lang
     )
@@ -140,8 +124,18 @@ def train(args):
 
     metric = evaluate.load('sacrebleu')
 
+    dataset_size = len(dataset['train'])
+    warmup_steps = calculate_warmup_steps(
+        epochs=args.num_epochs,
+        dataset_size=dataset_size,
+        batch_size=args.per_device_batch_size,
+        gradient_accumulation_steps=args.gradient_accumulation_steps,
+        warmup_ratio=args.warmup_ratio
+    )
+
     if args.just_test:
         project_name = 'test'
+        output_dir = '../models/test'
         logging_steps = 1
         eval_steps = 1
         save_steps = 1
@@ -149,6 +143,7 @@ def train(args):
         eval_dataset = dataset['validation'].select(range(10))
     else:
         project_name = args.project_name
+        output_dir = args.output_dir
         logging_steps = args.logging_steps
         eval_steps = warmup_steps
         save_steps = warmup_steps
@@ -164,7 +159,7 @@ def train(args):
     wandb.init(project=project_name, name=args.run_name)
 
     warmup_steps = calculate_warmup_steps(
-        epochs=args.num_train_epochs,
+        epochs=args.num_epochs,
         dataset_size=len(dataset['train']),
         batch_size=args.per_device_batch_size,
         gradient_accumulation_steps=args.gradient_accumulation_steps,
@@ -172,11 +167,11 @@ def train(args):
     )
 
     training_args = Seq2SeqTrainingArguments(
-        output_dir=args.output_dir,
+        output_dir=output_dir,
         dataloader_num_workers=args.dataloader_num_workers,
         per_device_train_batch_size=args.per_device_batch_size,
         per_device_eval_batch_size=args.per_device_batch_size,
-        num_train_epochs=args.num_train_epochs,
+        num_train_epochs=args.num_epochs,
         learning_rate=args.learning_rate,
         warmup_steps=warmup_steps, # 전체 step의 10%
         lr_scheduler_type=args.lr_scheduler_type,
@@ -234,7 +229,7 @@ def train(args):
     )
 
     trainer.train()
-    trainer.save_model(args.output_dir)
+    trainer.save_model(output_dir)
 
 
 if __name__ == '__main__':
