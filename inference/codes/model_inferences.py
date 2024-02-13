@@ -40,7 +40,10 @@ def load_model_and_tokenizer(model_type):
                           'madlad', 
                           'mbart-aihub', 
                           'llama', 
-                          'llama-aihub-qlora'], 'Wrong model type'
+                          'llama-aihub-qlora',
+                          'llama-aihub-qlora-augment',
+                          'llama-aihub-qlora-reverse-new',
+                          'llama-aihub-qlora-reverse-overlap'], 'Wrong model type'
 
     # existing translation models
     if model_type == 'opus':
@@ -73,9 +76,16 @@ def load_model_and_tokenizer(model_type):
         plm_name = 'beomi/open-llama-2-ko-7b'
         model = AutoModelForCausalLM.from_pretrained(plm_name, torch_dtype=torch.bfloat16)
         tokenizer = AutoTokenizer.from_pretrained(plm_name)
-    elif model_type == 'llama-aihub-qlora':
+    elif 'llama-aihub-qlora' in model_type:
         plm_name = 'beomi/open-llama-2-ko-7b'
-        lora_path = '../../training/llama_qlora/models/sft'
+        if model_type == 'llama-aihub-qlora':
+            lora_path = '../../training/llama_qlora/models/baseline'
+        elif model_type == 'llama-aihub-qlora-augment':
+            lora_path = '../../training/llama_qlora/models/augment'
+        elif model_type == 'llama-aihub-qlora-reverse-new':
+            lora_path = '../../training/llama_qlora/models/continuous-reverse-new'
+        elif model_type == 'llama-aihub-qlora-reverse-overlap':
+            lora_path = '../../training/llama_qlora/models/continuous-reverse-overlap'
         bnb_config = BitsAndBytesConfig(
             load_in_4bit=True,
             bnb_4bit_quant_type='nf4',
@@ -124,7 +134,7 @@ def translate(model, tokenizer, text, model_type, device, max_length=512):
 
     if model_type == 'madlad':
         text = ' '.join(['<2ko>', text])
-    elif model_type == 'llama' or model_type == 'llama-aihub-qlora':
+    elif 'llama' in model_type:
         text = f"### English: {text}\n### 한국어: "
 
     if model_type == 'mbart' or model_type == 'mbart-aihub':
@@ -138,7 +148,7 @@ def translate(model, tokenizer, text, model_type, device, max_length=512):
 
     if model_type == 'opus' or model_type == 'madlad' or model_type == 'llama':
         outputs = model.generate(**inputs, max_length=max_length)
-    elif model_type == 'llama-aihub-qlora':
+    elif 'llama-aihub-qlora' in model_type:
         inputs['input_ids'] = inputs['input_ids'][0][:-1].unsqueeze(dim=0)
         inputs['attention_mask'] = inputs['attention_mask'][0][:-1].unsqueeze(dim=0)
         outputs = model.generate(**inputs, max_length=max_length, eos_token_id=46332)
@@ -215,25 +225,28 @@ if __name__ == '__main__':
     - llama-aihub-qlora
     """
     source_column = "en"
-    eval_path_AIHUB = "../results/test_tiny_uniform100_inferenced_cleaned.csv"
-    save_path_AIHUB = "../results/test_tiny_uniform100_inferenced_cleaned.csv"
-    eval_path_FLORES = "../results/test_flores_inferenced_cleaned.csv"
-    save_path_FLORES = "../results/test_flores_inferenced_cleaned.csv"
+    eval_path_AIHUB = "../results/test_tiny_uniform100_inferenced.csv"
+    save_path_AIHUB = "../results/test_tiny_uniform100_inferenced.csv"
+    eval_path_FLORES = "../results/test_flores_inferenced.csv"
+    save_path_FLORES = "../results/test_flores_inferenced.csv"
     DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print("DEVICE:", DEVICE)
 
-    # model_types = ['mbart', 'nllb-600m', 'madlad']
-    # model_types = ['llama-aihub-qlora']
-    model_types = ['llama-aihub-qlora']
+    model_types = [
+        # 'llama-aihub-qlora',
+        'llama-aihub-qlora-augment',
+        'llama-aihub-qlora-reverse-new',
+        'llama-aihub-qlora-reverse-overlap',
+    ]
     for model_type in model_types:
         print(f"Inference model: {model_type.upper()}")
 
         # # inference sentence
-        # # text_en = "NMIXX is a South Korean girl group that made a comeback on January 15, 2024 with their new song 'DASH'."
-        # text_en = "The present invention provides clothing for treating the fracture of a pet dog's leg, comprising: an outer cover surrounding the body of the pet dog; a traction belt which can extend along the circumference of the outer cover; and two leg insertion parts which are fixed to both ends of the traction belt, respectively, and into which forelegs or hind legs of the pet dog can be inserted, at least one of the two leg insertion parts being made of a plaster cast."
+        # text_en = "NMIXX is a South Korean girl group that made a comeback on January 15, 2024 with their new song 'DASH'."
+        # # text_en = "I minimized the contact from outside by placing button and nozzle on engraved part."
         # translation = inference_single(model_type, text_en, DEVICE)
         # print(translation)
 
         # inference dataset
         target_column = model_type + "_trans"
-        inference(model_type, source_column, target_column, eval_path_FLORES, save_path_FLORES, DEVICE)
+        inference(model_type, source_column, target_column, eval_path_AIHUB, save_path_AIHUB, DEVICE)
