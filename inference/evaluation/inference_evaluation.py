@@ -296,7 +296,7 @@ def load_yaml_for_eval_results(yaml_path):
 
 
 if __name__ == '__main__':
-    # evaluate dataset
+    import argparse
     """
     [COLUMN_LIST]
     papago_trans: 네이버 파파고 API (현재 개수 미달)
@@ -338,7 +338,12 @@ if __name__ == '__main__':
     - 71266: 기술과학2
     - 71382: 방송콘텐츠
     """
-    dataset = 'flores'
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--dataset", type=str, default='aihub', help="Dataset for evaluation")
+    parser.add_argument("--save_yaml", type=lambda x: (str(x).lower() == 'true'), default=False, help="Save (or not) evaluation results in yaml file")
+    args = parser.parse_args()
+    dataset = args.dataset
+    save_yaml = args.save_yaml
 
     if dataset == 'aihub':
         eval_path = '../results/test_tiny_uniform100_inferenced.csv'
@@ -357,9 +362,13 @@ if __name__ == '__main__':
         'mbart_trans', 
         'nllb-600m_trans', 
         'madlad_trans', 
-        # 'llama_trans',
         'mbart-aihub_trans', 
         'llama-aihub-qlora_trans',
+        'llama-aihub-qlora-bf16_trans',
+        'llama-aihub-qlora-fp16_trans',
+        'llama-aihub-qlora-augment_trans',
+        'llama-aihub-qlora-reverse-new_trans',
+        'llama-aihub-qlora-reverse-overlap_trans',
     ]
     metric_list = ['sacrebleu', 'bertscore']
     source_list = [
@@ -376,13 +385,15 @@ if __name__ == '__main__':
     # evaluate all
     eval_dict = evaluate_all(eval_df, column_list, metric_list)
     print_evaluation_results(eval_dict)
-    save_eval_results_as_yaml(eval_dict, save_path)
+    if save_yaml:
+        save_eval_results_as_yaml(eval_dict, save_path)
 
     # evaluate separately by source (only for aihub dataset)
     if dataset == 'aihub':
         eval_dict_by_source = evaluate_by_source(eval_df, source_list, column_list, metric_list)
         print_evaluation_results(eval_dict_by_source)
-        save_eval_results_as_yaml(eval_dict_by_source, save_path_by_source)
+        if save_yaml:
+            save_eval_results_as_yaml(eval_dict_by_source, save_path_by_source)
 
     # SacreBLEU는 7.18/100점인데 반해, BERTScore는 89.33/100점
     # reference = "미국 심장협회의 연구에 따르면 이 행동을 자주 하면 고혈압을 의심해 봐야 한다고 하는데요."
