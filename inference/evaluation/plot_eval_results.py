@@ -55,7 +55,8 @@ def plot_bar(
     #     trans_types = list(eval_dict.keys())
 
     df = pd.DataFrame(list(eval_dict.items()), columns=['Translator', metric_name])
-    df['Translator'] = df['Translator'].apply(lambda x: x.replace('_processed', ''))
+    df['Translator'] = df['Translator'].apply(lambda x: x.replace('llama-aihub-qlora_trans', 'baseline'))
+    df['Translator'] = df['Translator'].apply(lambda x: x.replace('llama-aihub-qlora-', ''))
     df['Translator'] = df['Translator'].apply(lambda x: x.replace('_trans', ''))
 
     plt.figure(figsize=(15, 8))
@@ -124,7 +125,8 @@ def plot_bar_groupby_source(
                 continue
             reshaped_data['Dataset'].append(id_to_name[id])
             reshaped_data[metric_name].append(score)
-            trans_type = trans_type.replace('_processed', '')
+            trans_type = trans_type.replace('llama-aihub-qlora_trans', 'baseline')
+            trans_type = trans_type.replace('llama-aihub-qlora-', '')
             trans_type = trans_type.replace('_trans', '')
             reshaped_data['Translator Type'].append(trans_type)
 
@@ -141,7 +143,7 @@ def plot_bar_groupby_source(
 
     # Move legend to the upper-right corner
     # plt.legend(loc='upper right')
-    plt.legend(loc='upper center', bbox_to_anchor=(0.5, -0.1), fancybox=True, shadow=True, ncol=len(src_types))
+    plt.legend(loc='upper center', bbox_to_anchor=(0.5, -0.1), fancybox=True, shadow=True, ncol=len(trans_types))
 
     if show_chart:
         plt.show()
@@ -203,7 +205,8 @@ def plot_bar_groupby_translator(
                 continue
             reshaped_data['Dataset'].append(id_to_name[id])
             reshaped_data[metric_name].append(score)
-            trans_type = trans_type.replace('_processed', '')
+            trans_type = trans_type.replace('llama-aihub-qlora_trans', 'baseline')
+            trans_type = trans_type.replace('llama-aihub-qlora-', '')
             trans_type = trans_type.replace('_trans', '')
             reshaped_data['Translator Type'].append(trans_type)
 
@@ -220,7 +223,7 @@ def plot_bar_groupby_translator(
 
     # Move legend to the upper-right corner
     # plt.legend(loc='upper right')
-    plt.legend(loc='upper center', bbox_to_anchor=(0.5, -0.1), fancybox=True, shadow=True, ncol=len(trans_types))
+    plt.legend(loc='upper center', bbox_to_anchor=(0.5, -0.1), fancybox=True, shadow=True, ncol=len(src_types))
 
     if show_chart:
         plt.show()
@@ -237,6 +240,8 @@ def plot_speed(
         save_path=None
     ):
     df = pd.DataFrame(list(eval_speed.items()), columns=['Translator', 'Speed'])
+    df['Translator'] = df['Translator'].apply(lambda x: x.replace('llama-aihub-qlora_trans', 'baseline'))
+    df['Translator'] = df['Translator'].apply(lambda x: x.replace('llama-aihub-qlora-', ''))
     df['Translator'] = df['Translator'].apply(lambda x: x.replace('_trans', ''))
     
     plt.figure(figsize=(15, 8))
@@ -255,8 +260,12 @@ def plot_speed(
 
 if __name__ == '__main__':
     import yaml
+    import argparse
 
-    dataset = 'aihub'
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--dataset", type=str, default='aihub', help="Dataset for evaluation")
+    args = parser.parse_args()
+    dataset = args.dataset
 
     if dataset == 'aihub':
         yaml_path = '../results/test_tiny_uniform100_metrics.yaml'
@@ -265,20 +274,24 @@ if __name__ == '__main__':
         img_save_path = '../results/chart_images/aihub_speed.png'
     elif dataset == 'flores':
         yaml_path = '../results/test_flores_metrics.yaml'
-        yaml_path_speed_flores = '../results/test_flores_speeds.yaml'
+        yaml_path_speed = '../results/test_flores_speeds.yaml'
         img_save_path = '../results/chart_images/flores_speed.png'
 
     source_list = [111, 124, 125, 126, 563, 71265, 71266, 71382]
     column_list = [
-        'papago_trans',
-        'google_trans', 
-        'deepl_trans', 
-        'mbart_trans', 
-        'nllb-600m_trans', 
-        'madlad_trans',
-        # 'llama_trans',
-        'mbart-aihub_trans',
-        'llama-aihub-qlora_trans'
+        'llama-aihub-qlora_trans',
+        # 'papago_trans',
+        # 'google_trans', 
+        # 'deepl_trans', 
+        # 'mbart_trans', 
+        # 'nllb-600m_trans', 
+        # 'madlad_trans', 
+        # 'mbart-aihub_trans', 
+        'llama-aihub-qlora-bf16_trans',
+        'llama-aihub-qlora-fp16_trans',
+        'llama-aihub-qlora-augment_trans',
+        'llama-aihub-qlora-reverse-new_trans',
+        'llama-aihub-qlora-reverse-overlap_trans',
     ]
     metric_list_detail = ['sacrebleu', 'bertscore'] # 'bleu', 'sacrebleu', 'rouge_1', 'rouge_2', 'wer', 'bertscore'
 
@@ -351,8 +364,6 @@ if __name__ == '__main__':
     #     speed = yaml.safe_load(file)
     # speed = {trans: speed[trans]['speed'] for trans in column_list}
 
-    # save_path_speed_aihub = '../results/chart_images/aihub_speed.png'
-    # save_path_speed_flores = '../results/chart_images/flores_speed.png'
     # plot_speed(speed, show_chart=False, save_path=img_save_path)
 
 
