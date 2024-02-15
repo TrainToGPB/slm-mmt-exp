@@ -37,11 +37,12 @@ from transformers import TrainingArguments
 from transformers import BitsAndBytesConfig
 
 # custom
-sys.path.append('../../../../')
-from custom_utils.training_utils import set_seed
-from custom_utils.general_secret import WANDB_CLIENT_KEY
-from custom_utils.argument import parse_arguments_llama
+sys.path.append('../../')
+from training_utils import set_seed
+from argument import parse_arguments_llama
 from data_collator import CustomDataCollatorForCompletionOnlyLM
+sys.path.append('../../../../') # Use your own path
+from custom_utils.general_secret import WANDB_CLIENT_KEY # Use your own path
 
 
 def load_model_and_tokenizer(plm_name, device_map, max_length, use_gradient_checkpointing, bnb_config, lora_config):

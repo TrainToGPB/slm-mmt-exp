@@ -31,14 +31,15 @@ from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 from transformers import Seq2SeqTrainer, Seq2SeqTrainingArguments
 from transformers import default_data_collator
 from peft import LoraConfig
-from peft import get_peft_model, prepare_model_for_kbit_training
+from peft import get_peft_model
 from transformers import BitsAndBytesConfig
 
 # custom
-sys.path.append('../../../../')
-from custom_utils.training_utils import set_seed
-from custom_utils.general_secret import WANDB_CLIENT_KEY
-from custom_utils.argument import parse_arguments_mbart
+sys.path.append('../../')
+from training_utils import set_seed
+from argument import parse_arguments_mbart
+sys.path.append('../../../../') # Use your own path
+from custom_utils.general_secret import WANDB_CLIENT_KEY # Use your own path
 
 
 def load_model_and_tokenizer(plm_name, bnb_config, lora_config, src_lang='en_XX', tgt_lang='ko_KR'):

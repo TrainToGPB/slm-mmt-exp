@@ -35,10 +35,11 @@ from transformers import default_data_collator
 import torch.distributed.checkpoint as DCP
 
 # custom
-sys.path.append('../../../../')
-from custom_utils.training_utils import set_seed
-from custom_utils.general_secret import WANDB_CLIENT_KEY
-from custom_utils.argument import parse_arguments_mbart
+sys.path.append('../../')
+from training_utils import set_seed
+from argument import parse_arguments_mbart
+sys.path.append('../../../../') # Use your own path
+from custom_utils.general_secret import WANDB_CLIENT_KEY # Use your own path
 
 
 def load_model_and_tokenizer(model_name, src_lang='en_XX', tgt_lang='ko_KR'):
