@@ -1,5 +1,7 @@
 # built-in
 import os
+os.environ['CUDA_VISIBLE_DEVICES'] = '2'
+os.environ['VLLM_USE_MODELSCOPE'] = 'false'
 import re
 import sys
 import argparse
@@ -7,7 +9,6 @@ from tqdm import tqdm
 
 # third-party
 import torch
-import deepspeed
 import pandas as pd
 from peft import PeftModel
 from vllm import LLM, SamplingParams
@@ -17,34 +18,11 @@ from transformers import MBartForConditionalGeneration, MBart50Tokenizer
 from transformers import M2M100ForConditionalGeneration, NllbTokenizer
 from transformers import T5ForConditionalGeneration, T5Tokenizer
 from transformers import BitsAndBytesConfig
-from transformers.models.llama.modeling_llama import LlamaDecoderLayer
 
 # custom
 sys.path.append('../../../')
 from custom_utils.training_utils import set_seed
 
-
-MASTER_PORT = 60001
-os.environ['MASTER_ADDR'] = "localhost"
-os.environ['MASTER_PORT'] = str(MASTER_PORT)
-os.environ['RANK'] = "0"
-os.environ['LOCAL_RANK'] = "-1"
-
-NUM_GPUS = 1
-if NUM_GPUS == 1:
-    os.environ['CUDA_VISIBLE_DEVICES'] = '2'
-    os.environ['WORLD_SIZE'] = "1"
-    WORLD_SIZE = 1
-elif NUM_GPUS == 2:
-    os.environ['CUDA_VISIBLE_DEVICES'] = '2,3'
-    os.environ['WORLD_SIZE'] = "2"
-    WORLD_SIZE = 2
-elif NUM_GPUS == 4:
-    os.environ['CUDA_VISIBLE_DEVICES'] = '0,1,2,3'
-    os.environ['WORLD_SIZE'] = "4"
-    WORLD_SIZE = 4
-
-os.environ['VLLM_USE_MODELSCOPE'] = 'false'
 
 SEED = 42
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -72,7 +50,6 @@ def load_model_and_tokenizer(model_type):
         'llama-aihub-qlora': (('beomi/open-llama-2-ko-7b', '../../training/llama_qlora/models/baseline'), LlamaForCausalLM, LlamaTokenizer),
         'llama-aihub-qlora-bf16': ('../../training/llama_qlora/models/baseline-merged-bf16', LlamaForCausalLM, LlamaTokenizer),
         'llama-aihub-qlora-fp16': ('../../training/llama_qlora/models/baseline-merged-fp16', LlamaForCausalLM, LlamaTokenizer),
-        'llama-aihub-qlora-fp16-ds': ('../../training/llama_qlora/models/baseline-merged-fp16', LlamaForCausalLM, LlamaTokenizer),
         'llama-aihub-qlora-bf16-vllm': ('../../training/llama_qlora/models/baseline-merged-bf16', None, None),
         'llama-aihub-qlora-augment': (('beomi/open-llama-2-ko-7b', '../../training/llama_qlora/models/augment'), LlamaForCausalLM, LlamaTokenizer),
         'llama-aihub-qlora-reverse-new': (('beomi/open-llama-2-ko-7b', '../../training/llama_qlora/models/continuous-reverse-new'), LlamaForCausalLM, LlamaTokenizer),
@@ -91,7 +68,6 @@ def load_model_and_tokenizer(model_type):
             if model_type.endswith('vllm'):
                 model = LLM(
                     model=model_name, 
-                    tensor_parallel_size=WORLD_SIZE,
                     seed=SEED
                 )
             else:
@@ -123,25 +99,6 @@ def load_model_and_tokenizer(model_type):
         tokenizer.add_eos_token = True
         tokenizer.padding_side = 'right'
         tokenizer.model_max_length = 768
-
-        if model_type.endswith('ds'):
-            deepspeed.init_distributed(
-                dist_backend='nccl',
-                distributed_port=MASTER_PORT,
-                rank=0,
-                world_size=WORLD_SIZE
-            )
-            ds_engine = deepspeed.init_inference(
-                model,
-                tensor_parallel={'tp_size': WORLD_SIZE},
-                # mp_size=WORLD_SIZE,
-                dtype=torch.half,
-                checkpoint=None,
-                # injection_policy={LlamaDecoderLayer: ('self_attn.o_proj', 'mlp.down_proj')},
-                replace_method='auto',
-                replace_with_kernel_inject=True
-            )
-            model = ds_engine.module
 
     else:
         # For other models, simply load from pretrained
@@ -202,11 +159,7 @@ def translate(model, tokenizer, text, model_type, print_result=False, max_length
         if model_type.startswith('llama-aihub-qlora'):
             inputs['input_ids'] = inputs['input_ids'][0][:-1].unsqueeze(dim=0)
             inputs['attention_mask'] = inputs['attention_mask'][0][:-1].unsqueeze(dim=0)
-            if model_type.endswith('ds'):
-                use_cache = False
-            else:
-                use_cache = None
-            outputs = model.generate(**inputs, max_length=max_length, eos_token_id=46332, use_cache=use_cache)
+            outputs = model.generate(**inputs, max_length=max_length, eos_token_id=46332)
         elif 'mbart' in model_type or 'nllb' in model_type:
             outputs = model.generate(**inputs, max_length=max_length, forced_bos_token_id=tokenizer.lang_code_to_id[tokenizer.tgt_lang])
         else:
@@ -283,7 +236,6 @@ if __name__ == '__main__':
     - llama-aihub-qlora
     - llama-aihub-qlora-bf16 (merged & upscaled)
     - llama-aihub-qlora-fp16 (merged & upscaled)
-    - llama-aihub-qlora-fp16-ds (merged & upscaled + DeepSpeed, 아직 불가)
     - llama-aihub-qlora-bf16-vllm (merged & upscaled + vLLM)
     - llama-aihub-qlora-augment (확장된 데이터)
     - llama-aihub-qlora-reverse-new (llama-aihub-qlora 체크포인트에서 새로운 데이터로 한-영 역방향 학습)
