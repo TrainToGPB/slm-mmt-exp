@@ -1,6 +1,14 @@
+"""
+Get from transformers.data.data_collator.py
+
+Edited by Sehyeong Kim:
+    - 76~90, 118~132: Add some codes to handle the case when the template is "###" or " ###"
+"""
+# built-in
 import warnings
 from typing import Any, Dict, List, Union
 
+# third-party
 import numpy as np
 from transformers import DataCollatorForLanguageModeling
 
@@ -69,11 +77,11 @@ class CustomDataCollatorForCompletionOnlyLM(DataCollatorForLanguageModeling):
                 response_token_ids_start_idx = None
                 ################################### SEHYEONG EDITED ####################################
                 """
-                (1) response_template이 "###"으로 시작하는 경우, 가끔 개행('\n')과 "###"이 만났을 때 token id가 바뀌는 경우가 있음
+                (1) template이 "###"으로 시작하는 경우, 가끔 개행('\n')과 "###"이 만났을 때 token id가 바뀌는 경우가 있음
                 >>> ###: 835
                 >>> \n### -> _# + ##: 2277 + 29937
 
-                (2) response_template이 " ###"으로 시작하는 경우, response_token_ids는 공백('_')의 id로 시작하나 실제 토큰 시퀀스는 그렇지 않은 경우가 있음
+                (2) template이 " ###"으로 시작하는 경우, token_ids는 공백('_')의 id로 시작하나 실제 토큰 시퀀스는 그렇지 않은 경우가 있음
                 >>> _###: 29871 + 835
                 >>> \n_### -> ###: 835
                 """
@@ -111,11 +119,11 @@ class CustomDataCollatorForCompletionOnlyLM(DataCollatorForLanguageModeling):
                 human_token_ids_idxs = []
                 ################################### SEHYEONG EDITED ####################################
                 """
-                (1) response_template이 "###"으로 시작하는 경우, 가끔 개행('\n')과 "###"이 만났을 때 token id가 바뀌는 경우가 있음
+                (1) template이 "###"으로 시작하는 경우, 가끔 개행('\n')과 "###"이 만났을 때 token id가 바뀌는 경우가 있음
                 >>> ###: 835
                 >>> \n### -> _# + ##: 2277 + 29937
 
-                (2) response_template이 " ###"으로 시작하는 경우, response_token_ids는 공백('_')의 id로 시작하나 실제 토큰 시퀀스는 그렇지 않은 경우가 있음
+                (2) template이 " ###"으로 시작하는 경우, token_ids는 공백('_')의 id로 시작하나 실제 토큰 시퀀스는 그렇지 않은 경우가 있음
                 >>> _###: 29871 + 835
                 >>> \n_### -> ###: 835
                 """

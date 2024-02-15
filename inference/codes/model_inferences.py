@@ -1,3 +1,40 @@
+"""
+Perform inference on the specified dataset using the specified pre-trained language model.
+
+The following models are supported:
+- opus (제외: 번역 안됨)
+- mbart
+- nllb-600m
+- nllb-1.3b (제외)
+- madlad
+- mbart-aihub
+- llama
+- llama-aihub-qlora
+- llama-aihub-qlora-bf16 (merged & upscaled)
+- llama-aihub-qlora-fp16 (merged & upscaled)
+- llama-aihub-qlora-bf16-vllm (merged & upscaled + vLLM)
+- llama-aihub-qlora-augment (확장된 데이터)
+- llama-aihub-qlora-reverse-new (llama-aihub-qlora 체크포인트에서 새로운 데이터로 한-영 역방향 학습)
+- llama-aihub-qlora-reverse-overlap (llama-aihub-qlora 체크포인트에서 동일한 데이터로 한-영 역방향 학습)
+
+The following datasets are supported:
+- aihub: AI Hub integrated dataset (ref: 추가 예정)
+- flores: FLoRes-101 dataset (ref: 추가 예정)
+
+CLI example:
+- Inference on the AI Hub dataset:
+    $ python model_inferences.py --dataset aihub --inference_type dataset
+- Inference on a single sentence:
+    $ python model_inferences.py --dataset aihub --inference_type sentence
+
+Output:
+- Translated dataset file (CSV format)
+- Translated sentence (print)
+
+Notes:
+- The translated dataset file will be saved in the same directory as the original dataset file.
+- The translated sentence will be printed on the console.
+"""
 # built-in
 import os
 os.environ['CUDA_VISIBLE_DEVICES'] = '2'
@@ -37,8 +74,10 @@ def load_model_and_tokenizer(model_type):
     - model_type (str): Type of the pre-trained language model.
 
     Returns:
-    - PreTrainedModel: Pre-trained language model.
+    - model (PreTrainedModel): Pre-trained language model.
+    - tokenizer (PreTrainedTokenizer): Pre-trained tokenizer.
     """
+    # Model mapping
     model_mapping = {
         'opus': ('Helsinki-NLP/opus-mt-tc-big-en-ko', MarianMTModel, MarianTokenizer),
         'mbart': ('facebook/mbart-large-50-many-to-many-mmt', MBartForConditionalGeneration, MBart50Tokenizer),
@@ -57,22 +96,19 @@ def load_model_and_tokenizer(model_type):
     }
     assert model_type in model_mapping.keys(), 'Wrong model type'
 
-    # Load model and tokenizer based on the model type
+    # Load pre-trained language model and tokenizer
     model_name, model_cls, tokenizer_cls = model_mapping[model_type]
     if isinstance(model_name, tuple):
         model_name, adapter_path = model_name[0], model_name[1]
     
+    # llama-aihub-qlora, llama-aihub-qlora-bf16, llama-aihub-qlora-fp16
     if model_type.startswith('llama-aihub-qlora'):
-        # Special configurations for llama-aihub-qlora models
         if '16' in model_type:
-            if model_type.endswith('vllm'):
-                model = LLM(
-                    model=model_name, 
-                    seed=SEED
-                )
-            else:
+            if model_type.endswith('vllm'):                # bf16-vllm
+                model = LLM(model=model_name, seed=SEED)
+            else:                                          # bf16, fp16
                 model = model_cls.from_pretrained(model_name)
-        else:
+        else:                                              # baseline, augment, reverse-new, reverse-overlap
             bnb_config = BitsAndBytesConfig(
                 load_in_4bit=True,
                 bnb_4bit_quant_type='nf4',
@@ -100,8 +136,8 @@ def load_model_and_tokenizer(model_type):
         tokenizer.padding_side = 'right'
         tokenizer.model_max_length = 768
 
+    # opus, mbart, nllb-600m, nllb-1.3b, madlad, mbart-aihub, llama
     else:
-        # For other models, simply load from pretrained
         model = model_cls.from_pretrained(model_name)
         tokenizer = tokenizer_cls.from_pretrained(model_name)
 
@@ -120,7 +156,7 @@ def translate(model, tokenizer, text, model_type, print_result=False, max_length
     - print_result (bool): Whether to print the translated text.
 
     Returns:
-    - str: Translated text.
+    - translated_text (str): Translated text.
     """
     if not model_type.endswith('vllm'):
         model.to(DEVICE)
@@ -211,7 +247,7 @@ def inference_single(model_type, text):
     - text (str): Input text to be translated.
 
     Returns:
-    - str: Translated text.
+    - translation (str): Translated text.
     """
     set_seed(SEED)
     model, tokenizer = load_model_and_tokenizer(model_type)
@@ -224,48 +260,43 @@ def inference_single(model_type, text):
 
 
 if __name__ == '__main__':
-    """
-    [MODEL_TYPE]
-    - opus (제외: 번역 안됨)
-    - mbart
-    - nllb-600m
-    - nllb-1.3b (제외)
-    - madlad
-    - mbart-aihub
-    - llama
-    - llama-aihub-qlora
-    - llama-aihub-qlora-bf16 (merged & upscaled)
-    - llama-aihub-qlora-fp16 (merged & upscaled)
-    - llama-aihub-qlora-bf16-vllm (merged & upscaled + vLLM)
-    - llama-aihub-qlora-augment (확장된 데이터)
-    - llama-aihub-qlora-reverse-new (llama-aihub-qlora 체크포인트에서 새로운 데이터로 한-영 역방향 학습)
-    - llama-aihub-qlora-reverse-overlap (llama-aihub-qlora 체크포인트에서 동일한 데이터로 한-영 역방향 학습)
-    """
     import argparse
     
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset", type=str, default='aihub', help="Dataset for inference")
+    parser.add_argument("--inference_type", type=str, default='sentence', help="Inference type (sentence or dataset)")
     args = parser.parse_args()
     dataset = args.dataset
     
     source_column = "en"
-    if dataset == 'aihub':
-        file_path = "../results/test_tiny_uniform100_inferenced.csv"
-    elif dataset == 'flores':
-        file_path = "../results/test_flores_inferenced.csv"
+    file_path_dict = {
+        'aihub': "../data/aihub_test_tiny_uniform100.csv",
+        'flores': "../data/flores_test.csv"
+    }
+    file_path = file_path_dict[dataset]
 
     model_types = [
-        'llama-aihub-qlora-bf16-vllm',
+        # 'mbart',
+        # 'nllb-600m',
+        # 'madlad',
+        # 'llama',
+        # 'mbart-aihub',
+        # 'llama-aihub-qlora',
+        # 'llama-aihub-qlora-bf16',
+        # 'llama-aihub-qlora-fp16',
+        'llama-aihub-qlora-bf16-vllm', # Best model
+        # 'llama-aihub-qlora-augment',
+        # 'llama-aihub-qlora-reverse-new',
+        # 'llama-aihub-qlora-reverse-overlap'
     ]
     for model_type in model_types:
         print(f"Inference model: {model_type.upper()}")
 
-        # # inference dataset
-        # target_column = model_type + "_trans"
-        # inference(model_type, source_column, target_column, file_path, print_result=True)
+        if args.inference_type == 'dataset':
+            target_column = model_type + "_trans"
+            inference(model_type, source_column, target_column, file_path, print_result=True)
         
-        # inference sentence
-        # text_en = "NMIXX is a South Korean girl group that made a comeback on January 15, 2024 with their new song 'DASH'."
-        text_en = "In remote locations, without cell phone coverage, a satellite phone may be your only option."
-        translation = inference_single(model_type, text_en)
-        print(translation)
+        if args.inference_type == 'sentence':
+            text_en = "NMIXX is a South Korean girl group that made a comeback on January 15, 2024 with their new song 'DASH'."
+            translation = inference_single(model_type, text_en)
+            print(translation)

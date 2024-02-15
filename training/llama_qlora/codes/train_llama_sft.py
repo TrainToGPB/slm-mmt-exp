@@ -1,3 +1,19 @@
+"""
+Train the model with the specified configuration
+
+The following functions are available:
+- load_model_and_tokenizer: Load the model and tokenizer with the specified configuration
+- calculate_warmup_steps: Calculate the number of warmup steps
+- postprocess_text: Postprocess the text
+- drop_long_texts: Drop long texts from the dataset
+- train: Train the model
+
+Example:
+    $ python train_llama_sft.py 
+
+Notes:
+- The training arguments are in the llama_config.yaml file
+"""
 # built-in
 import os
 import sys
@@ -28,14 +44,22 @@ from custom_utils.argument import parse_arguments_llama
 from data_collator import CustomDataCollatorForCompletionOnlyLM
 
 
-def load_model_and_tokenizer(
-        plm_name,
-        device_map,
-        max_length,
-        use_gradient_checkpointing,
-        bnb_config,
-        lora_config,
-    ):
+def load_model_and_tokenizer(plm_name, device_map, max_length, use_gradient_checkpointing, bnb_config, lora_config):
+    """
+    Load the model and tokenizer with the specified configuration
+
+    Args:
+    - plm_name (str): The name of the pre-trained language model
+    - device_map (int): The device map
+    - max_length (int): The maximum length of the text
+    - use_gradient_checkpointing (bool): Whether to use gradient checkpointing
+    - bnb_config (BitsAndBytesConfig): The BitsAndBytesConfig
+    - lora_config (LoraConfig): The LoraConfig
+
+    Returns:
+    - model (PreTrainedModel): The model
+    - tokenizer (PreTrainedTokenizer): The tokenizer
+    """
     model = AutoModelForCausalLM.from_pretrained(
         plm_name,
         quantization_config=bnb_config,
@@ -75,6 +99,19 @@ def load_model_and_tokenizer(
 
 
 def calculate_warmup_steps(epochs, dataset_size, batch_size, gradient_accumulation_steps, warmup_ratio):
+    """
+    Calculate the number of warmup steps
+
+    Args:
+    - epochs (int): The number of epochs
+    - dataset_size (int): The size of the dataset
+    - batch_size (int): The batch size
+    - gradient_accumulation_steps (int): The number of gradient accumulation steps
+    - warmup_ratio (float): The warmup ratio
+
+    Returns:
+    - warmup_steps (int): The number of warmup steps
+    """
     steps_per_epoch = (dataset_size / batch_size)
     total_steps = epochs * steps_per_epoch / gradient_accumulation_steps
     total_steps_per_device = total_steps / torch.cuda.device_count()
@@ -83,12 +120,35 @@ def calculate_warmup_steps(epochs, dataset_size, batch_size, gradient_accumulati
 
 
 def postprocess_text(preds, labels):
+    """
+    Postprocess the text
+
+    Args:
+    - preds (list): The predictions
+    - labels (list): The labels
+
+    Returns:
+    - preds (list): The postprocessed predictions
+    - labels (list): The postprocessed labels
+    """
     preds = [pred.strip() for pred in preds]
     labels = [[label.strip()] for label in labels]
     return preds, labels
 
 
 def drop_long_texts(dataset, tokenizer, max_length=768, len_threshold=700):
+    """
+    Drop long texts from the dataset
+
+    Args:
+    - dataset (Dataset): The dataset
+    - tokenizer (AutoTokenizer): The tokenizer
+    - max_length (int): The maximum length of the text
+    - len_threshold (int): The length threshold
+
+    Returns:
+    - dataset_dropped (Dataset): The dataset with long texts dropped
+    """
     df = pd.DataFrame(dataset)
 
     rows_to_drop = []
@@ -117,6 +177,12 @@ def drop_long_texts(dataset, tokenizer, max_length=768, len_threshold=700):
 
 
 def train(args):
+    """
+    Train the model
+
+    Args:
+    - args (Namespace): The arguments
+    """
     set_seed(args.seed)
 
     compute_dtype = getattr(torch, args.bnb_4bit_compute_dtype)
@@ -238,6 +304,15 @@ def train(args):
 
 
     def compute_sacrebleu(p):
+        """
+        Compute the SacreBLEU score
+
+        Args:
+        - p (EvalPrediction): The evaluation prediction
+
+        Returns:
+        - result (dict): The result
+        """
         IGNORE_INDEX = -100
 
         preds, labels = p.predictions[0], p.label_ids

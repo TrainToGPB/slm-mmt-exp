@@ -1,9 +1,30 @@
+"""
+This script is used to merge the adapter with the dequantized model and save it to the specified directory
+
+The following functions are available:
+- save_model: Save the model to the specified directory
+- dequantize_model: Dequantize the model and save it to the specified directory
+- dequantize_and_save: Dequantize the model and save it to the specified directory
+- convert_bf16_to_fp16: Convert the model from bfloat16 to float16 and save it to the specified directory
+
+Example:
+    python merge_qlora.py
+
+Notes:
+    This script is intended to be used with the OpenAI GPT-3 model and the BitsAndBytes library
+    The model is dequantized and merged with the adapter
+    The dequantized model is saved to the specified directory
+    The merged model is saved to the specified directory
+    The model is converted from bfloat16 to float16 and saved to the specified directory
+"""
+# built-in
 import os
 os.environ['CUDA_VISIBLE_DEVICES'] = '2'
 import gc
 import json
 import copy
 
+# third-party
 import torch
 import shutil
 from tqdm import tqdm
@@ -15,6 +36,14 @@ from transformers import LlamaForCausalLM, LlamaTokenizer, BitsAndBytesConfig
 
 
 def save_model(model, tokenizer, to):
+    """
+    Save the model to the specified directory
+
+    Args:
+    - model: The model to be saved
+    - tokenizer: The tokenizer to be saved
+    - to: The directory to save the model
+    """
     print(f"Saving dequantized model to {to}...")
     model.save_pretrained(to)
     tokenizer.save_pretrained(to)
@@ -27,11 +56,17 @@ def save_model(model, tokenizer, to):
 
 def dequantize_model(model, tokenizer, to=None, dtype=torch.bfloat16, device=torch.cuda.current_device()):
     """
-    'model': the peftmodel you loaded with qlora.
-    'tokenizer': the model's corresponding hf's tokenizer.
-    'to': directory to save the dequantized model
-    'dtype': dtype that the model was trained using
-    'device': device to load the model to
+    Dequantize the model and save it to the specified directory
+
+    Args:
+    - model: The model to be dequantized
+    - tokenizer: The tokenizer to be saved
+    - to: The directory to save the model
+    - dtype: The data type to convert the model to
+    - device: The device to move the model to
+
+    Returns:
+    - The dequantized model
     """
     cls = bnb.nn.Linear4bit
 
@@ -73,6 +108,18 @@ def dequantize_and_save(
         save_dequant_plm_path,
         save_dequant_merged_path
     ):
+    """
+    Dequantize the model and save it to the specified directory
+
+    Args:
+    - model_path: The path to the model to be dequantized
+    - adapter_path: The path to the adapter to be merged with the model
+    - save_dequant_plm_path: The directory to save the dequantized model
+    - save_dequant_merged_path: The directory to save the merged model
+
+    Returns:
+    - The dequantized model
+    """
     quantization_config=BitsAndBytesConfig(
         load_in_4bit=True,
         bnb_4bit_compute_dtype=torch.bfloat16,
@@ -125,6 +172,16 @@ def dequantize_and_save(
 
 
 def convert_bf16_to_fp16(model_path, save_path):
+    """
+    Convert the model from bfloat16 to float16 and save it to the specified directory
+
+    Args:
+    - model_path: The path to the model to be converted
+    - save_path: The directory to save the converted model
+
+    Returns:
+    - The converted model
+    """
     model = LlamaForCausalLM.from_pretrained(model_path, torch_dtype=torch.bfloat16)
     tokenizer = LlamaTokenizer.from_pretrained(model_path)
     for param in model.parameters():

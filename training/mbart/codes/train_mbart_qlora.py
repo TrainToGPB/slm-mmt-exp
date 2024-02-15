@@ -1,3 +1,20 @@
+"""
+Train mBART with QLoRA training
+
+The following functions are available:
+- load_model_and_tokenizer: Load model and tokenizer
+- preprocess_example: Preprocess example
+- postprocess_text: Postprocess text
+- preprocess_logits_for_metrics: Preprocess logits for metrics
+- calculate_warmup_steps: Calculate warmup steps
+- train: Train model
+
+Example:
+    $ python train_mbart_qlora.py
+
+Notes:
+- The training arguments are defined in the mbart_qlora_config.yaml file.
+"""
 # built-in
 import os
 os.environ['CUDA_VISIBLE_DEVICES'] = '0,1'
@@ -24,13 +41,21 @@ from custom_utils.general_secret import WANDB_CLIENT_KEY
 from custom_utils.argument import parse_arguments_mbart
 
 
-def load_model_and_tokenizer(
-        plm_name, 
-        bnb_config,
-        lora_config,
-        src_lang='en_XX', 
-        tgt_lang='ko_KR'
-    ):
+def load_model_and_tokenizer(plm_name, bnb_config, lora_config, src_lang='en_XX', tgt_lang='ko_KR'):
+    """
+    Load model and tokenizer
+
+    Args:
+    - plm_name (str): Pretrained model name
+    - bnb_config (BitsAndBytesConfig): BitsAndBytesConfig
+    - lora_config (LoraConfig): LoraConfig
+    - src_lang (str): Source language
+    - tgt_lang (str): Target language
+
+    Returns:
+    - model (PreTrainedModel): Pretrained model
+    - tokenizer (PreTrainedTokenizer): Pretrained tokenizer
+    """
     model = AutoModelForSeq2SeqLM.from_pretrained(
         plm_name,
         quantization_config=bnb_config,
@@ -55,6 +80,17 @@ def load_model_and_tokenizer(
 
 
 def preprocess_example(example, max_length, tokenizer):
+    """
+    Preprocess example
+
+    Args:
+    - example (dict): Example dictionary
+    - max_length (int): Maximum length of input sequence
+    - tokenizer (PreTrainedTokenizer): Pretrained tokenizer
+
+    Returns:
+    - model_inputs (dict): Model inputs
+    """
     src_text = example['en']
     tgt_text = example['ko']
 
@@ -72,6 +108,17 @@ def preprocess_example(example, max_length, tokenizer):
 
 
 def postprocess_text(preds, labels):
+    """
+    Postprocess text
+
+    Args:
+    - preds (list): Predictions
+    - labels (list): Labels
+
+    Returns:
+    - preds (list): Postprocessed predictions
+    - labels (list): Postprocessed labels
+    """
     preds = [pred.strip() for pred in preds]
     labels = [[label.strip()] for label in labels]
     return preds, labels
@@ -83,6 +130,19 @@ def preprocess_logits_for_metrics(logits, labels):
 
 
 def calculate_warmup_steps(epochs, dataset_size, batch_size, gradient_accumulation_steps, warmup_ratio):
+    """
+    Calculate warmup steps
+
+    Args:
+    - epochs (int): Number of epochs
+    - dataset_size (int): Size of dataset
+    - batch_size (int): Batch size
+    - gradient_accumulation_steps (int): Gradient accumulation steps
+    - warmup_ratio (float): Warmup ratio
+
+    Returns:
+    - warmup_steps (int): Warmup steps
+    """
     steps_per_epoch = (dataset_size / batch_size)
     total_steps = epochs * steps_per_epoch / gradient_accumulation_steps
     total_steps_per_device = total_steps / torch.cuda.device_count()
@@ -91,6 +151,12 @@ def calculate_warmup_steps(epochs, dataset_size, batch_size, gradient_accumulati
 
 
 def train(args):
+    """
+    Train model
+
+    Args:
+    - args (argparse.ArgumentParser): Input arguments
+    """
     set_seed(args.seed)
 
     compute_dtype = getattr(torch, args.bnb_4bit_compute_dtype)
@@ -197,6 +263,15 @@ def train(args):
     )
 
     def compute_sacrebleu(p):
+        """
+        Compute SacreBLEU
+
+        Args:
+        - p (EvalPrediction): EvalPrediction object
+
+        Returns:
+        - result (dict): Result dictionary
+        """
         preds, labels = p.predictions[0], p.label_ids
         preds = np.where(preds != -100, preds, tokenizer.pad_token_id)
         labels = np.where(labels != -100, labels, tokenizer.pad_token_id)

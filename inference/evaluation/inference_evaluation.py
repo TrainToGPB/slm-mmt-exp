@@ -1,5 +1,43 @@
+"""
+Evaluation metrics for translation quality.
+
+The following functions are available:
+
+[For sentence-level evaluation]
+- calculate_sentence_bleu: Calculate the BLEU score for a candidate sentence compared to a reference sentence.
+- calculate_sentence_token_bleu: Calculate the BLEU score between a reference sentence and a candidate sentence using tokenization.
+- calculate_sentence_sacrebleu: Calculate the SacreBLEU score for a single sentence.
+- calculate_sentence_rouge: Calculate the ROUGE scores for a candidate sentence compared to a reference sentence.
+- calculate_sentence_wer: Calculate the Word Error Rate (WER) between a reference sentence and a candidate sentence.
+- calculate_sentence_bertscore: Calculate the BERTScore for a given reference and candidate sentence.
+
+[For corpus-level evaluation]
+- calculate_bleu: Calculate the BLEU score for evaluating translation quality.
+- calculate_token_bleu: Calculate the token-level BLEU score for evaluating translation quality.
+- calculate_sacrebleu: Calculate the SacreBLEU score for evaluating translation quality.
+- calculate_rouge: Calculate the ROUGE-1 and ROUGE-2 scores for the given evaluation dataframe and column name.
+- calculate_wer: Calculate the Word Error Rate (WER) for a given evaluation dataframe and column name.
+- calculate_bertscore: Calculate the BERTScore for a given evaluation dataframe and column name.
+
+[For evaluation]
+- evaluate_all: Evaluate the performance of translation models on multiple columns using multiple metrics.
+- evaluate_by_source: Evaluate the performance of the model by source.
+- print_evaluation_results: Prints the evaluation results.
+- save_eval_results_as_yaml: Save evaluation results as YAML file.
+- load_yaml_for_eval_results: Load a YAML file and return the contents as a dictionary.
+
+Examples:
+    python inference_evaluation.py --dataset aihub --save_yaml True
+    python inference_evaluation.py --dataset flores --save_yaml True
+
+Notes:
+    - The evaluation results are saved as a YAML file.
+    - The evaluation results are printed to the console.
+"""
+# built-in
 import yaml
 
+# third-party
 import evaluate
 import bert_score
 import Levenshtein
@@ -12,27 +50,27 @@ from nltk.translate.bleu_score import sentence_bleu, corpus_bleu
 
 def get_average(tuple_data):
     """
-    Calculate the average of a tuple of numerical values.
+    Calculate average of tuple data
 
-    Parameters:
-    - tuple_data (tuple): Tuple of numerical values.
+    Args:
+    - tuple_data (tuple): tuple data (e.g. (1, 2, 3)
 
     Returns:
-    - average (float): Average value.
+    - float: average of tuple data
     """
     return sum(tuple_data) / len(tuple_data)
 
 
 def calculate_sentence_bleu(reference, candidate):
     """
-    Calculate the BLEU score for a pair of reference and candidate sentences.
+    Calculate the BLEU score for a candidate sentence compared to a reference sentence.
 
-    Parameters:
-    - reference (str): Reference sentence.
-    - candidate (str): Candidate sentence.
+    Args:
+    - reference (str): The reference sentence.
+    - candidate (str): The candidate sentence.
 
     Returns:
-    - bleu (float): BLEU score.
+    - float: The BLEU score as a percentage.
     """
     bleu = sentence_bleu([reference.split()], candidate.split())
     return bleu * 100
@@ -40,14 +78,14 @@ def calculate_sentence_bleu(reference, candidate):
 
 def calculate_bleu(eval_df, column_name):
     """
-    Calculate the BLEU score for a given column in the evaluation dataframe.
+    Calculate the BLEU score for evaluating translation quality.
 
-    Parameters:
-    - eval_df (DataFrame): Evaluation dataframe.
-    - column_name (str): Name of the column to be evaluated.
+    Args:
+    - eval_df (pandas.DataFrame): DataFrame containing the evaluation data.
+    - column_name (str): Name of the column containing the translated sentences.
 
     Returns:
-    - bleu (float): BLEU score.
+    - float: BLEU score as a percentage.
     """
     references = eval_df['ko'].apply(lambda x: [x]).tolist()
     eval_df[column_name] = eval_df[column_name].fillna(' ')
@@ -58,15 +96,14 @@ def calculate_bleu(eval_df, column_name):
 
 def calculate_sentence_rouge(reference, candidate):
     """
-    Calculate the ROUGE scores (ROUGE-1 and ROUGE-2) for a pair of reference and candidate sentences.
+    Calculate the ROUGE scores for a candidate sentence compared to a reference sentence.
 
     Parameters:
-    - reference (str): Reference sentence.
-    - candidate (str): Candidate sentence.
+    - reference (str): The reference sentence.
+    - candidate (str): The candidate sentence.
 
     Returns:
-    - rouge_1 (float): ROUGE-1 score.
-    - rouge_2 (float): ROUGE-2 score.
+    - tuple: A tuple containing the ROUGE-1 score and ROUGE-2 score, both multiplied by 100.
     """
     rouge = Rouge()
     rouge_scores = rouge.get_scores(candidate, reference)
@@ -77,15 +114,14 @@ def calculate_sentence_rouge(reference, candidate):
 
 def calculate_rouge(eval_df, column_name):
     """
-    Calculate the average ROUGE scores (ROUGE-1 and ROUGE-2) for a given column in the evaluation dataframe.
+    Calculate the ROUGE-1 and ROUGE-2 scores for the given evaluation dataframe and column name.
 
     Parameters:
-    - eval_df (DataFrame): Evaluation dataframe.
-    - column_name (str): Name of the column to be evaluated.
+    - eval_df (pandas.DataFrame): The evaluation dataframe.
+    - column_name (str): The name of the column containing the reference sentences.
 
     Returns:
-    - rouge_1 (float): Average ROUGE-1 score (percentage).
-    - rouge_2 (float): Average ROUGE-2 score (percentage).
+    - tuple: A tuple containing the ROUGE-1 and ROUGE-2 scores.
     """
     eval_df[column_name] = eval_df[column_name].fillna(' ')
     rouge_1_scores, rouge_2_scores = zip(*eval_df.apply(lambda row: calculate_sentence_rouge(row['ko'], row[column_name]), axis=1))
@@ -95,28 +131,28 @@ def calculate_rouge(eval_df, column_name):
 
 def calculate_sentence_wer(reference, candidate):
     """
-    Calculate the Word Error Rate (WER) for a pair of reference and candidate sentences.
+    Calculates the Word Error Rate (WER) between a reference sentence and a candidate sentence.
 
     Parameters:
-    - reference (str): Reference sentence.
-    - candidate (str): Candidate sentence.
+    - reference (str): The reference sentence.
+    - candidate (str): The candidate sentence.
 
     Returns:
-    - wer (int): Word Error Rate.
+    - int: The Word Error Rate (WER) between the reference and candidate sentences.
     """
     return Levenshtein.distance(reference.split(), candidate.split())
 
 
 def calculate_wer(eval_df, column_name):
     """
-    Calculate the average Word Error Rate (WER) for a given column in the evaluation dataframe.
+    Calculate the Word Error Rate (WER) for a given evaluation dataframe and column name.
 
     Parameters:
-    - eval_df (DataFrame): Evaluation dataframe.
-    - column_name (str): Name of the column to be evaluated.
+    - eval_df (pandas.DataFrame): The evaluation dataframe containing the reference and hypothesis sentences.
+    - column_name (str): The name of the column in the dataframe that contains the hypothesis sentences.
 
     Returns:
-    - wer (float): Average Word Error Rate.
+    - float: The calculated Word Error Rate (WER).
     """
     eval_df = eval_df.fillna(' ')
     wer_scores = eval_df.apply(lambda row: calculate_sentence_wer(row['ko'], row[column_name]), axis=1)
@@ -125,17 +161,40 @@ def calculate_wer(eval_df, column_name):
 
 
 def calculate_sentence_token_bleu(reference, candidate, tokenizer_name='gogamza/kobart-base-v2'):
+    """
+    Calculates the BLEU score between a reference sentence and a candidate sentence.
+
+    Args:
+    - reference (str): The reference sentence.
+    - candidate (str): The candidate sentence.
+    - tokenizer_name (str, optional): The name of the tokenizer to use. Defaults to 'gogamza/kobart-base-v2'.
+
+    Returns:
+    - float: The BLEU score between the reference and candidate sentences.
+    """
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
 
     reference_tokens = tokenizer.tokenize(reference)
     candidate_tokens = tokenizer.tokenize(candidate)
 
-    sacrebleu = sentence_bleu([reference_tokens], candidate_tokens) * 100
+    token_bleu = sentence_bleu([reference_tokens], candidate_tokens) * 100
     
-    return sacrebleu
+    return token_bleu
 
 
 def calculate_token_bleu(eval_df, column_name, tokenizer_name='gogamza/kobart-base-v2'):
+    """
+    Calculate the token-level BLEU score for evaluating translation quality.
+
+    Args:
+    - eval_df (pandas.DataFrame): DataFrame containing the evaluation data.
+    - column_name (str): Name of the column containing the translations to be evaluated.
+    - tokenizer_name (str, optional): Name of the tokenizer to be used. Defaults to 'gogamza/kobart-base-v2'.
+
+    Returns:
+    - float: The token-level BLEU score.
+
+    """
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
 
     references = eval_df['ko'].tolist()
@@ -144,14 +203,23 @@ def calculate_token_bleu(eval_df, column_name, tokenizer_name='gogamza/kobart-ba
     references = [tokenizer.tokenize(ref) for ref in references]
     candidates = [tokenizer.tokenize(can) for can in candidates]
 
-    # sacrebleu = evaluate.load('sacrebleu')
-    sacrebleu_scores = [sentence_bleu(references, candidate) for candidate in tqdm(candidates)]
-    sacrebleu = get_average(sacrebleu_scores) * 100
+    token_bleu_scores = [sentence_bleu(references, candidate) for candidate in tqdm(candidates)]
+    token_bleu = get_average(token_bleu_scores) * 100
 
-    return sacrebleu
+    return token_bleu
 
 
 def calculate_sentence_sacrebleu(reference, candidate):
+    """
+    Calculate the SacreBLEU score for a single sentence.
+
+    Args:
+    - reference (str): The reference sentence.
+    - candidate (str): The candidate sentence.
+
+    Returns:
+    - float: The SacreBLEU score.
+    """
     metric = evaluate.load('sacrebleu')
     candidate = candidate if not pd.isna(candidate) else ' '
     sacrebleu = metric.compute(references=[[reference]], predictions=[candidate])['score']
@@ -159,6 +227,17 @@ def calculate_sentence_sacrebleu(reference, candidate):
 
 
 def calculate_sacrebleu(eval_df, column_name):
+    """
+    Calculate the SacreBLEU score for evaluating translation quality.
+
+    Args:
+    - eval_df (pandas.DataFrame): DataFrame containing the evaluation data.
+    - column_name (str): Name of the column containing the translations to be evaluated.
+
+    Returns:
+    - float: The SacreBLEU score.
+
+    """
     metric = evaluate.load('sacrebleu')
 
     references = eval_df['ko'].tolist()
@@ -171,6 +250,16 @@ def calculate_sacrebleu(eval_df, column_name):
 
 
 def calculate_sentence_bertscore(reference, candidate):
+    """
+    Calculate the BERTScore for a given reference and candidate sentence.
+
+    Parameters:
+    - reference (str): The reference sentence.
+    - candidate (str): The candidate sentence.
+
+    Returns:
+    - float: The BERTScore value for the candidate sentence.
+    """
     reference = [reference]
     candidate = candidate if candidate else ' '
     candidate = [candidate]
@@ -181,6 +270,16 @@ def calculate_sentence_bertscore(reference, candidate):
 
 
 def calculate_bertscore(eval_df, column_name):
+    """
+    Calculate the BERTScore for a given evaluation dataframe and column name.
+
+    Parameters:
+    - eval_df (pandas.DataFrame): The evaluation dataframe containing the reference and candidate sentences.
+    - column_name (str): The name of the column in the dataframe containing the candidate sentences.
+
+    Returns:
+    - float: The average BERTScore multiplied by 100.
+    """
     references = eval_df['ko'].tolist()
     candidates = eval_df[column_name].fillna(' ').tolist()
 
@@ -193,20 +292,20 @@ def calculate_bertscore(eval_df, column_name):
 
 def evaluate_all(eval_df, column_list=None, metric_list=None):
     """
-    Evaluate multiple metrics for each column in the evaluation dataframe.
+    Evaluate the performance of translation models on multiple columns using multiple metrics.
 
-    Parameters:
-    - eval_df (DataFrame): Evaluation dataframe.
-    - column_list (list): List of column names to be evaluated.
-    - metric_list (list): List of metrics to be calculated ('bleu', 'sacrebleu', 'rouge', 'wer').
+    Args:
+    - eval_df (pandas.DataFrame): The DataFrame containing the evaluation data.
+    - column_list (list, optional): The list of columns to evaluate. Defaults to ['google_trans'].
+    - metric_list (list, optional): The list of metrics to calculate. Defaults to ['sacrebleu'].
 
     Returns:
-    - eval_dict (dict): Dictionary containing evaluation results for each column and metric.
+    - eval_dict (dict): A dictionary containing the evaluation results for each column.
     """
     if column_list is None:
-        column_list = ['google_trans', 'deepl_trans','mbart_trans', 'nllb-600m_trans', 'nllb-1.3b_trans', 'madlad_trans']
+        column_list = ['google_trans']
     if metric_list is None:
-        metric_list = ['bleu', 'bertscore']
+        metric_list = ['sacrebleu']
 
     eval_dict = dict()
     for col in column_list:
@@ -236,16 +335,16 @@ def evaluate_all(eval_df, column_list=None, metric_list=None):
 
 def evaluate_by_source(eval_df, source_list, column_list, metric_list):
     """
-    Evaluate multiple metrics for each column in the evaluation dataframe, grouped by source.
+    Evaluate the performance of the model by source.
 
-    Parameters:
-    - eval_df (DataFrame): Evaluation dataframe.
-    - source_list (list): List of source names.
-    - column_list (list): List of column names to be evaluated.
-    - metric_list (list): List of metrics to be calculated ('bleu', 'sacrebleu', 'rouge', 'wer', 'bertscore').
+    Args:
+    - eval_df (pandas.DataFrame): The evaluation dataframe.
+    - source_list (list): List of sources to evaluate.
+    - column_list (list): List of columns to evaluate.
+    - metric_list (list): List of metrics to evaluate.
 
     Returns:
-    - eval_dict_by_source (dict): Dictionary containing evaluation results for each source, column, and metric.
+    - eval_dict_by_source (dict): A dictionary containing the evaluation results for each source.
     """
     eval_dict_by_source = dict()
     for src in source_list:
@@ -258,13 +357,10 @@ def evaluate_by_source(eval_df, source_list, column_list, metric_list):
 
 def print_evaluation_results(eval_dict):
     """
-    Print the evaluation results for each translation model and metric.
+    Prints the evaluation results.
 
-    Parameters:
-    - eval_dict (dict): Dictionary containing evaluation results.
-
-    Output:
-    - Printed results in the console.
+    Args:
+    - eval_dict (dict): A dictionary containing the evaluation results.
     """
     for trans in eval_dict.keys():
         print(f"[{str(trans).upper()}]")
@@ -279,17 +375,26 @@ def print_evaluation_results(eval_dict):
 
 def save_eval_results_as_yaml(eval_dict, save_path):
     """
-    Save the evaluation results to a YAML file.
+    Save evaluation results as YAML file.
 
-    Parameters:
+    Args:
     - eval_dict (dict): Dictionary containing evaluation results.
-    - file_path (str): Path to the YAML file where results will be saved.
+    - save_path (str): Path to save the YAML file.
     """
     with open(save_path, 'w') as file:
         yaml.dump(eval_dict, file)
 
 
 def load_yaml_for_eval_results(yaml_path):
+    """
+    Load a YAML file and return the contents as a dictionary.
+
+    Parameters:
+    - yaml_path (str): The path to the YAML file.
+
+    Returns:
+    - eval_dict (dict): The contents of the YAML file as a dictionary.
+    """
     with open(yaml_path, 'r') as file:
         eval_dict = yaml.safe_load(file)
     return eval_dict
@@ -299,34 +404,53 @@ if __name__ == '__main__':
     import argparse
     """
     [COLUMN_LIST]
-    papago_trans: 네이버 파파고 API (현재 개수 미달)
-    google_trans: 구글 번역 API
-    deepl_trans: 딥엘 API
-    mbart_trans: facebook/mbart-large-50-many-to-many-mmt (HuggingFace)
-    mbart-aihub_trans: facebook/mbart-large-50 (HuggingFace) + AI Hub 한-영 번역 데이터 full-finetuning
-    nllb-600m_trans: facebook/nllb-200-distilled-600M (HuggingFace)
-    nllb-1.3b_trans: facebook/nllb-200-distilled-1.3B (HuggingFace)
-    madlad_trans: google/madlad400-3b-mt (HuggingFace)
-    llama_trans: beomi/open-llama-ko-7b (HuggingFace)
-    llama-aihub-qlora_trans: beomi/open-llama-ko-7b (HuggingFace) + AI Hub 한-영 번역 데이터 QLoRA finetuning
-    llama-aihub-qlora_trans_processed: llama-aihub-qlora_trans의 수작업 정제 버전
+    # API
+    - papago_trans: Naver Papago API
+    - google_trans: Google Translate API
+    - deepl_trans: DeepL API
+
+    # Model Checkpoints
+    - mbart_trans: facebook/mbart-large-50-many-to-many-mmt
+    - nllb-600m_trans: facebook/nllb-200-distilled-600M
+    - nllb-1.3b_trans: facebook/nllb-200-distilled-1.3B
+    - madlad_trans: google/madlad400-3b-mt
+
+    # Finetuned 
+    -----------------------------------------------------------------------------------------------
+      model: facebook/mbart-large-50 (mbart)
+             beomi/open-llama-2-ko-7b (llama)
+      dataset: traintogpb/aihub-koen-translation-integrated-tiny-100k
+    -----------------------------------------------------------------------------------------------
+    - mbart-aihub_trans: Full-finetuned on aihub dataset
+    - llama_trans: Pretrained only
+    - llama-aihub-qlora_trans: QLORA finetuned on aihub dataset
+    - llama-aihub-qlora-bf16_trans: Upscaled with BrainFloat 16-bit from QLORA finetuned version
+    - llama-aihub-qlora-fp16_trans: Upscaled with Float 16-bit from QLORA finetuned version
+    - llama-aihub-qlora-augment_trans: QLoRA finetuned on augmented aihub dataset (240k)
+    - llama-aihub-qlora-reverse-new_trans: QLoRA finetuned on reverse direction (ko-en) from llama-aihub-qlora checkpoint with the new data
+    - llama-aihub-qlora-reverse-overlap_trans: QLoRA finetuned on reverse direction (ko-en) from llama-aihub-qlora checkpoint with the same data
 
     [METRIC_LIST]
     bleu: 
-     - BLEU (Bi-Lingual Evaluation Understudy)
-     - 번역에서 가장 흔하게 사용되나 띄어쓰기 기준 단어 단위로 평가해 한국어 평가에 다소 부적합한 면이 있음
-     - generation 단어가 reference에 얼마나 포함되는지
+    - Bi-Lingual Evaluation Understudy
+    - generation 단어가 reference에 얼마나 포함되는지
+    - 번역에서 가장 흔하게 사용되나 띄어쓰기 기준 단어 단위로 평가해 한국어 평가에 다소 부적합한 면이 있음
     sacrebleu: 
-     - SacreBLEU
-     - BLEU와 원리가 같으나 띄어쓰기 단어 기준인 BLEU와 달리 토큰 단위로 평가해 한국어 평가에 조금 더 적합
+    - SacreBLEU
+    - BLEU와 원리가 같으나 띄어쓰기 단어 기준인 BLEU와 달리 토큰 단위로 평가해 한국어 평가에 조금 더 적합
+    - 배포된 국제 표준이 있어 통일된 평가가 가능
     rouge: 
-     - Rouge-1 / Rouge-2
-     - 번역보다는 요약 task에서 주로 사용하며, Rouge-L도 있으나 거의 Rouge-1과 동일하여 제외
-     - reference 단어가 generation에 얼마나 포함되는지
+    - Recall-Oriented Understudy for Gisting Evaluation
+    - reference 단어가 generation에 얼마나 포함되는지
+    - 번역보다는 요약 task에서 주로 사용하며, Rouge-L도 있으나 거의 Rouge-1과 동일하여 제외
     wer: 
-     - Word Error Rate
-     - 번역보다는 음성 인식 task에서 주로 사용
-     - 단순하게 generation과 reference 간 단어 단위 오류율로 계산
+    - Word Error Rate
+    - 단순하게 generation과 reference 간 단어 단위 오류율로 계산
+    - 번역보다는 음성 인식 task에서 주로 사용
+    bertscore:
+    - BERTScore
+    - reference와 generation을 BERT 기반으로 임베딩하여 cosine similarity로 평가
+    - 번역의 품질을 평가하는데 가장 최신이자 성능이 좋은 metric
 
     [SOURCE_LIST]
     - 111: 전문분야

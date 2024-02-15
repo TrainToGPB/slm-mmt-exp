@@ -1,3 +1,21 @@
+"""
+Train mBART model
+
+The following functions are available:
+- load_model_and_tokenizer: Load model and tokenizer
+- preprocess_example: Preprocess example
+- postprocess_text: Postprocess text
+- preprocess_logits_for_metrics: Preprocess logits for metrics
+- calculate_warmup_steps: Calculate warmup steps
+- merge_and_save_distcp: Merge and save distcp
+- train: Train model
+
+Example:
+    $ python train_mbart.py
+
+Notes:
+- The training arguments are defined in the mbart_config.yaml file.
+"""
 # built-in
 import os
 os.environ['CUDA_VISIBLE_DEVICES'] = '0,1'
@@ -24,12 +42,35 @@ from custom_utils.argument import parse_arguments_mbart
 
 
 def load_model_and_tokenizer(model_name, src_lang='en_XX', tgt_lang='ko_KR'):
+    """
+    Load model and tokenizer
+
+    Args:
+    - model_name (str): Pretrained model name
+    - src_lang (str): Source language
+    - tgt_lang (str): Target language
+
+    Returns:
+    - model (PreTrainedModel): Pretrained model
+    - tokenizer (PreTrainedTokenizer): Pretrained tokenizer
+    """
     model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
     tokenizer = AutoTokenizer.from_pretrained(model_name, src_lang=src_lang, tgt_lang=tgt_lang)
     return model, tokenizer
 
 
 def preprocess_example(example, max_length, tokenizer):
+    """
+    Preprocess example
+
+    Args:
+    - example (dict): Example dictionary
+    - max_length (int): Maximum length of input sequence
+    - tokenizer (PreTrainedTokenizer): Pretrained tokenizer
+
+    Returns:
+    - model_inputs (dict): Model inputs
+    """
     src_text = example['en']
     tgt_text = example['ko']
 
@@ -47,6 +88,17 @@ def preprocess_example(example, max_length, tokenizer):
 
 
 def postprocess_text(preds, labels):
+    """
+    Postprocess text
+
+    Args:
+    - preds (list): Predictions
+    - labels (list): Labels
+
+    Returns:
+    - preds (list): Postprocessed predictions
+    - labels (list): Postprocessed labels
+    """
     preds = [pred.strip() for pred in preds]
     labels = [[label.strip()] for label in labels]
     return preds, labels
@@ -58,6 +110,19 @@ def preprocess_logits_for_metrics(logits, labels):
 
 
 def calculate_warmup_steps(epochs, dataset_size, batch_size, gradient_accumulation_steps, warmup_ratio):
+    """
+    Calculate warmup steps
+
+    Args:
+    - epochs (int): Number of epochs
+    - dataset_size (int): Size of dataset
+    - batch_size (int): Batch size
+    - gradient_accumulation_steps (int): Gradient accumulation steps
+    - warmup_ratio (float): Warmup ratio
+
+    Returns:
+    - warmup_steps (int): Warmup steps
+    """
     steps_per_epoch = (dataset_size / batch_size)
     total_steps = epochs * steps_per_epoch / gradient_accumulation_steps
     total_steps_per_device = total_steps / torch.cuda.device_count()
@@ -66,6 +131,13 @@ def calculate_warmup_steps(epochs, dataset_size, batch_size, gradient_accumulati
 
 
 def merge_and_save_distcp(model, distcp_dir):
+    """
+    Merge and save distcp
+
+    Args:
+    - model (PreTrainedModel): Pretrained model
+    - distcp_dir (str): Directory of distcp
+    """
     state_dict = {
         "model": model.state_dict(),
     }
@@ -81,6 +153,12 @@ def merge_and_save_distcp(model, distcp_dir):
 
 
 def train(args):
+    """
+    Train model
+
+    Args:
+    - args (argparse.ArgumentParser): Input arguments
+    """
     set_seed(args.seed)
 
     model, tokenizer = load_model_and_tokenizer(args.plm_name, args.src_lang, args.tgt_lang)
@@ -135,6 +213,15 @@ def train(args):
     )
 
     def compute_sacrebleu(p):
+        """
+        Compute SacreBLEU
+
+        Args:
+        - p (EvalPrediction): EvalPrediction object
+
+        Returns:
+        - result (dict): Result dictionary
+        """
         preds, labels = p.predictions[0], p.label_ids
         preds = np.where(preds != -100, preds, tokenizer.pad_token_id)
         labels = np.where(labels != -100, labels, tokenizer.pad_token_id)

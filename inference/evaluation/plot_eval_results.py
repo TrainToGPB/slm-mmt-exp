@@ -1,3 +1,4 @@
+# third-party
 import matplotlib.pyplot as plt
 from matplotlib import font_manager as fm
 import seaborn as sns
@@ -43,17 +44,7 @@ def restructure_metric_source_column(eval_dict, source_list, column_list, metric
     return new_dict
 
 
-def plot_bar(
-        eval_dict, 
-        metric_name, 
-        # trans_types=None, 
-        ylim=None, 
-        show_chart=True, 
-        save_path=None
-    ):
-    # if trans_types is None:
-    #     trans_types = list(eval_dict.keys())
-
+def plot_bar(eval_dict, metric_name, ylim=None, show_chart=True, save_path=None):
     df = pd.DataFrame(list(eval_dict.items()), columns=['Translator', metric_name])
     df['Translator'] = df['Translator'].apply(lambda x: x.replace('llama-aihub-qlora_trans', 'baseline'))
     df['Translator'] = df['Translator'].apply(lambda x: x.replace('llama-aihub-qlora-', ''))
@@ -82,17 +73,6 @@ def plot_bar_groupby_source(
         show_chart=True, 
         save_path=None
     ):
-    """
-    Plot a grouped bar chart for translation scores grouped by dataset.
-
-    Parameters:
-    - dict_single_metric (dict): Dictionary containing translation scores (of a single metric type) for each dataset, translator type.
-    - trans_types (list, optional): List of translator types to include in the plot. Default is None (include all).
-    - src_types (list, optional): List of dataset IDs to include in the plot. Default is None (include all).
-
-    Output:
-    - Displayed bar plot in the console.
-    """
     if trans_types is None:
         trans_types = list(dict_single_metric.keys())
     if src_types is None:
@@ -162,17 +142,6 @@ def plot_bar_groupby_translator(
         show_chart=True, 
         save_path=None
     ):
-    """
-    Plot a grouped bar chart for translation scores grouped by translator.
-
-    Parameters:
-    - dict_single_metric (dict): Dictionary containing translation scores (of a single metric type) for each dataset, translator type.
-    - trans_types (list, optional): List of translator types to include in the plot. Default is None (include all).
-    - src_types (list, optional): List of dataset IDs to include in the plot. Default is None (include all).
-
-    Output:
-    - Displayed bar plot in the console.
-    """
     if trans_types is None:
         trans_types = list(dict_single_metric.keys())
     if src_types is None:
