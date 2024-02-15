@@ -264,18 +264,22 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset", type=str, default='aihub', help="Dataset for evaluation")
+    parser.add_argument("--metric_plot", type=lambda x: (str(x).lower() == 'true'), default=True, help="Plot metric or not")
+    parser.add_argument("--speed_plot", type=lambda x: (str(x).lower() == 'true'), default=False, help="Plot speed or not")
     args = parser.parse_args()
     dataset = args.dataset
+    metric_plot = args.metric_plot
+    speed_plot = args.speed_plot
 
     if dataset == 'aihub':
         yaml_path = '../results/test_tiny_uniform100_metrics.yaml'
         yaml_path_by_source = '../results/test_tiny_uniform100_metrics_by_source.yaml'
         yaml_path_speed = '../results/test_tiny_uniform100_speeds.yaml'
-        img_save_path = '../results/chart_images/aihub_speed.png'
+        img_save_path = '../results/chart_images/aihub_speed_llamas.png'
     elif dataset == 'flores':
         yaml_path = '../results/test_flores_metrics.yaml'
         yaml_path_speed = '../results/test_flores_speeds.yaml'
-        img_save_path = '../results/chart_images/flores_speed.png'
+        img_save_path = '../results/chart_images/flores_speed_llamas.png'
 
     source_list = [111, 124, 125, 126, 563, 71265, 71266, 71382]
     column_list = [
@@ -288,6 +292,7 @@ if __name__ == '__main__':
         # 'madlad_trans', 
         # 'mbart-aihub_trans', 
         'llama-aihub-qlora-bf16_trans',
+        'llama-aihub-qlora-bf16-vllm_trans',
         'llama-aihub-qlora-fp16_trans',
         'llama-aihub-qlora-augment_trans',
         'llama-aihub-qlora-reverse-new_trans',
@@ -295,75 +300,77 @@ if __name__ == '__main__':
     ]
     metric_list_detail = ['sacrebleu', 'bertscore'] # 'bleu', 'sacrebleu', 'rouge_1', 'rouge_2', 'wer', 'bertscore'
 
-    with open(yaml_path, 'r') as file:
-        result = yaml.safe_load(file)
-    dict_metric_column = restructure_metric_column(result, column_list, metric_list_detail)
-    
-    if dataset == 'aihub':
-        with open(yaml_path_by_source, 'r') as file:
-            result_by_source = yaml.safe_load(file)
-        dict_metric_column_source = restructure_metric_column_source(result_by_source, source_list, column_list, metric_list_detail)
-
-    for metric in metric_list_detail:
-        if metric == 'bleu':
-            metric_name = 'BLEU'
-            ylim = (0, 70)
-        elif metric == 'sacrebleu':
-            metric_name = 'SacreBLEU'
-            ylim = (0, 30)
-            ylim_by_source = (0, 55)
-            ylim_by_translator = (0, 55)
-        elif metric == 'rouge_1':
-            metric_name = 'Rouge-1'
-            ylim = (0, 40)
-        elif metric == 'rouge_2':
-            metric_name = 'Rouge-2'
-            ylim = (0, 30)
-        elif metric == 'wer':
-            metric_name = 'WER'
-            ylim = (0, 100)
-        elif metric == 'bertscore':
-            metric_name = 'BERT-Score'
-            ylim = (70, 100)
-            ylim_by_source = (70, 100)
-            ylim_by_translator = (70, 100)
-
-        save_path = f'../results/chart_images/{dataset}_{metric}.png'
-        plot_bar(
-            dict_metric_column[metric],
-            metric_name=metric_name,
-            ylim=ylim,
-            show_chart=False,
-            save_path=save_path
-        )
-
+    if metric_plot:
+        with open(yaml_path, 'r') as file:
+            result = yaml.safe_load(file)
+        dict_metric_column = restructure_metric_column(result, column_list, metric_list_detail)
+        
         if dataset == 'aihub':
-            save_path_groupby_source = f'../results/chart_images/aihub_{metric}_groupby_dataset.png'
-            plot_bar_groupby_source(
-                dict_metric_column_source[metric],
+            with open(yaml_path_by_source, 'r') as file:
+                result_by_source = yaml.safe_load(file)
+            dict_metric_column_source = restructure_metric_column_source(result_by_source, source_list, column_list, metric_list_detail)
+
+        for metric in metric_list_detail:
+            if metric == 'bleu':
+                metric_name = 'BLEU'
+                ylim = (0, 70)
+            elif metric == 'sacrebleu':
+                metric_name = 'SacreBLEU'
+                ylim = (0, 30)
+                ylim_by_source = (0, 55)
+                ylim_by_translator = (0, 55)
+            elif metric == 'rouge_1':
+                metric_name = 'Rouge-1'
+                ylim = (0, 40)
+            elif metric == 'rouge_2':
+                metric_name = 'Rouge-2'
+                ylim = (0, 30)
+            elif metric == 'wer':
+                metric_name = 'WER'
+                ylim = (0, 100)
+            elif metric == 'bertscore':
+                metric_name = 'BERT-Score'
+                ylim = (70, 100)
+                ylim_by_source = (70, 100)
+                ylim_by_translator = (70, 100)
+
+            save_path = f'../results/chart_images/{dataset}_{metric}.png'
+            plot_bar(
+                dict_metric_column[metric],
                 metric_name=metric_name,
-                trans_types=None,
-                src_types=None,
-                ylim=ylim_by_source,
+                ylim=ylim,
                 show_chart=False,
-                save_path=save_path_groupby_source
+                save_path=save_path
             )
 
-            save_path_groupby_translator = f'../results/chart_images/aihub_{metric}_groupby_translator.png'
-            plot_bar_groupby_translator(
-                dict_metric_column_source[metric],
-                metric_name=metric_name,
-                trans_types=None,
-                src_types=None,
-                ylim=ylim_by_translator,
-                show_chart=False,
-                save_path=save_path_groupby_translator
-            )
+            if dataset == 'aihub':
+                save_path_groupby_source = f'../results/chart_images/aihub_{metric}_groupby_dataset.png'
+                plot_bar_groupby_source(
+                    dict_metric_column_source[metric],
+                    metric_name=metric_name,
+                    trans_types=None,
+                    src_types=None,
+                    ylim=ylim_by_source,
+                    show_chart=False,
+                    save_path=save_path_groupby_source
+                )
 
-    # with open(yaml_path_speed, 'r') as file:
-    #     speed = yaml.safe_load(file)
-    # speed = {trans: speed[trans]['speed'] for trans in column_list}
+                save_path_groupby_translator = f'../results/chart_images/aihub_{metric}_groupby_translator.png'
+                plot_bar_groupby_translator(
+                    dict_metric_column_source[metric],
+                    metric_name=metric_name,
+                    trans_types=None,
+                    src_types=None,
+                    ylim=ylim_by_translator,
+                    show_chart=False,
+                    save_path=save_path_groupby_translator
+                )
 
-    # plot_speed(speed, show_chart=False, save_path=img_save_path)
+    if speed_plot:
+        with open(yaml_path_speed, 'r') as file:
+            speed = yaml.safe_load(file)
+        speed = {trans: speed[trans]['speed'] for trans in column_list}
+
+        plot_speed(speed, show_chart=False, save_path=img_save_path)
 
 
