@@ -1,5 +1,6 @@
 import os
-os.environ['CUDA_VISIBLE_DEVICES'] = '3'
+# os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+os.environ['VLLM_USE_MODELSCOPE'] = 'false'
 import re
 import time
 from datetime import datetime
@@ -8,83 +9,129 @@ import torch
 import numpy as np
 import pandas as pd
 import streamlit as st
-from tqdm import tqdm
+from vllm import LLM, SamplingParams
 from peft import PeftModel
 from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import LlamaForCausalLM
 from transformers import BitsAndBytesConfig
 
 
-DEVICE = torch.cuda.current_device()
+@st.cache_resource
+def load_qlora_model(gpu_id=0):
+    DEVICE = torch.device(f'cuda:{gpu_id}')
+
+    plm_name = 'beomi/open-llama-2-ko-7b'
+    adapter_path = './training/llama_qlora/models/baseline'
+
+    bnb_config = BitsAndBytesConfig(
+        load_in_4bit=True,
+        bnb_4bit_quant_type='nf4',
+        bnb_4bit_compute_dtype=torch.bfloat16,
+        bnb_4bit_use_double_quant=True
+    )
+    torch_dtype = torch.bfloat16
+    model = AutoModelForCausalLM.from_pretrained(
+        plm_name, 
+        quantization_config=bnb_config, 
+        torch_dtype=torch_dtype
+    )
+    model = PeftModel.from_pretrained(
+        model, 
+        adapter_path, 
+        torch_dtype=torch_dtype
+    )
+    model.to(DEVICE)
+
+    return model, adapter_path, gpu_id
 
 
 @st.cache_resource
+def load_bf16_model(gpu_id=1):
+    DEVICE = torch.device(f'cuda:{gpu_id}')
+
+    model_path = './training/llama_qlora/models/baseline-merged-bf16'
+    model = AutoModelForCausalLM.from_pretrained(model_path, torch_dtype=torch.bfloat16)
+    model.to(DEVICE)
+    return model, model_path, gpu_id
+
+
+@st.cache_resource
+def load_bf16_vllm_model(gpu_id=2):
+    model_path = './training/llama_qlora/models/baseline-merged-bf16'
+    model = LLM(model_path, seed=42)
+    return model, model_path, gpu_id
+
+
+def load_model(model_type):
+    model_dict = {
+        'qlora': load_qlora_model,
+        'bf16-upscaled': load_bf16_model,
+        'bf16-upscaled-vllm': load_bf16_vllm_model
+    }
+    load_model_func = model_dict[model_type.lower()]
+    return load_model_func()
+
+
 def load_model_and_tokenizer(_model_type):
-    with st.spinner("모델 불러오는 중..."):
-        if _model_type == "QLoRA":
-            plm_name = 'beomi/open-llama-2-ko-7b'
-            lora_path = './training/llama_qlora/models/baseline'
-            bnb_config = BitsAndBytesConfig(
-                load_in_4bit=True,
-                bnb_4bit_quant_type='nf4',
-                bnb_4bit_compute_dtype=torch.bfloat16,
-                bnb_4bit_use_double_quant=True
-            )
-            torch_dtype = torch.bfloat16
-            model = AutoModelForCausalLM.from_pretrained(
-                plm_name, 
-                quantization_config=bnb_config, 
-                torch_dtype=torch_dtype
-            )
-            model = PeftModel.from_pretrained(
-                model, 
-                lora_path, 
-                torch_dtype=torch_dtype
-            )
-            model.to(torch.cuda.current_device())
+    with st.spinner(f"{_model_type} 모델 불러오는 중..."):
+        model, model_path, gpu_id = load_model(_model_type)
 
-        elif _model_type == "BF16-Upscaled":
-            plm_name = './training/llama_qlora/models/baseline-merged-bf16'
-            model = AutoModelForCausalLM.from_pretrained(plm_name, torch_dtype=torch.float16)
+    tokenizer = AutoTokenizer.from_pretrained(model_path)
+    tokenizer.pad_token = "</s>"
+    tokenizer.pad_token_id = 2
+    tokenizer.eos_token = "<|endoftext|>"
+    tokenizer.eos_token_id = 46332
+    tokenizer.add_eos_token = True
+    tokenizer.padding_side = 'right'
+    tokenizer.model_max_length = 768
 
-        model.to(torch.cuda.current_device())
-
-        tokenizer = AutoTokenizer.from_pretrained(plm_name)
-        tokenizer.pad_token = "</s>"
-        tokenizer.pad_token_id = 2
-        tokenizer.eos_token = "<|endoftext|>"
-        tokenizer.eos_token_id = 46332
-        tokenizer.add_eos_token = True
-        tokenizer.padding_side = 'right'
-        tokenizer.model_max_length = 768
-
-    # st.success("모델 불러오기 완료!")
-
-    return model, tokenizer
+    return model, tokenizer, gpu_id
 
 
-def translate(text, model, tokenizer):
+def translate(text, model, tokenizer, gpu_id):
     if text is None or text == "" or pd.isna(text):
         text = " "
     text_formatted = f"### English: {text}\n### 한국어: "
 
-    inputs = tokenizer(
-        text_formatted,
-        return_tensors='pt',
-        max_length=768,
-        padding=True,
-        truncation=True
-    )
-    inputs = {key: value.to(DEVICE) for key, value in inputs.items()}
-    inputs['input_ids'] = inputs['input_ids'][0][:-1].unsqueeze(dim=0)
-    inputs['attention_mask'] = inputs['attention_mask'][0][:-1].unsqueeze(dim=0)
-    input_len = len(inputs['input_ids'].squeeze())
+    if isinstance(model, LlamaForCausalLM) or isinstance(model, PeftModel):
+        inputs = tokenizer(
+            text_formatted,
+            return_tensors='pt',
+            max_length=768,
+            padding=True,
+            truncation=True
+        )
+        device = torch.device(f'cuda:{gpu_id}')
+        inputs = {key: value.to(device) for key, value in inputs.items()}
+        inputs['input_ids'] = inputs['input_ids'][0][:-1].unsqueeze(dim=0)
+        inputs['attention_mask'] = inputs['attention_mask'][0][:-1].unsqueeze(dim=0)
+        input_len = len(inputs['input_ids'].squeeze())
 
-    start_time = datetime.now()
-    outputs = model.generate(**inputs, max_length=768, eos_token_id=46332)
-    end_time = datetime.now()
+        start_time = datetime.now()
+        outputs = model.generate(**inputs, max_length=768, eos_token_id=46332)
+        end_time = datetime.now()
+
+        translation = tokenizer.decode(outputs[0][input_len:], skip_special_tokens=True)
+    elif isinstance(model, LLM):
+        sampling_params = SamplingParams(
+            temperature=0, 
+            top_p=0.95,
+            skip_special_tokens=True,
+            stop='<|endoftext|>',
+            frequency_penalty=0.3,
+            repetition_penalty=1.3,
+            max_tokens=350
+        )
+        start_time = datetime.now()
+        outputs = model.generate([text_formatted], sampling_params, use_tqdm=False)
+        end_time = datetime.now()
+        
+        translation = outputs[0].outputs[0].text
+    else:
+        raise ValueError("Invalid model type")
+
     translation_time = (end_time - start_time).total_seconds()
 
-    translation = tokenizer.decode(outputs[0][input_len:], skip_special_tokens=True)
     translation = re.sub(r'\s+', ' ', translation)
     translation = translation.strip()
 
@@ -138,7 +185,7 @@ def main():
     st.write("__영어 문장을 입력하시면, 한글로 번역해 드립니다!__")
 
     st.write("번역할 모델을 선택하세요:")
-    selected_model = st.radio("", ["QLoRA", "BF16-Upscaled"])
+    selected_model = st.radio("", ["QLoRA", "BF16-Upscaled", "BF16-Upscaled-vLLM"])
 
     st.sidebar.title("기능 선택")
     selected_option = st.sidebar.radio("__원하는 작업을 선택하세요__", options=["단일 문장 번역", "CSV 파일 번역"])
@@ -150,9 +197,10 @@ def main():
 
         if st.button("번역"):
             if text.strip() != "":
-                model, tokenizer = load_model_and_tokenizer(selected_model)
+                print(selected_model)
+                model, tokenizer, gpu_id = load_model_and_tokenizer(selected_model)
 
-                translation, translation_time = translate(text, model, tokenizer)
+                translation, translation_time = translate(text, model, tokenizer, gpu_id)
 
                 st.write("__번역 결과:__")
                 st.write(translation)
@@ -211,4 +259,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
