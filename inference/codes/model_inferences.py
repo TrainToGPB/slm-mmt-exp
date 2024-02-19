@@ -37,6 +37,7 @@ Notes:
 """
 # built-in
 import os
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 os.environ['CUDA_VISIBLE_DEVICES'] = '2'
 os.environ['VLLM_USE_MODELSCOPE'] = 'false'
 import re
@@ -57,8 +58,9 @@ from transformers import T5ForConditionalGeneration, T5Tokenizer
 from transformers import BitsAndBytesConfig
 
 # custom
-sys.path.append('../../../')
-from custom_utils.training_utils import set_seed
+sys.path.append('./')
+sys.path.append('../../')
+from training.training_utils import set_seed
 
 
 SEED = 42
@@ -84,15 +86,15 @@ def load_model_and_tokenizer(model_type):
         'nllb-600m': ('facebook/nllb-200-distilled-600M', M2M100ForConditionalGeneration, NllbTokenizer),
         'nllb-1.3b': ('facebook/nllb-200-distilled-1.3B', M2M100ForConditionalGeneration, NllbTokenizer),
         'madlad': ('google/madlad400-3b-mt', T5ForConditionalGeneration, T5Tokenizer),
-        'mbart-aihub': ('../../training/mbart/models/mbart-full', MBartForConditionalGeneration, MBart50Tokenizer),
+        'mbart-aihub': (os.path.join(SCRIPT_DIR, '../../training/mbart/models/mbart-full'), MBartForConditionalGeneration, MBart50Tokenizer),
         'llama': ('beomi/open-llama-2-ko-7b', LlamaForCausalLM, LlamaTokenizer),
         'llama-aihub-qlora': (('beomi/open-llama-2-ko-7b', 'traintogpb/llama-2-en2ko-translator-7b-qlora-adapter'), LlamaForCausalLM, LlamaTokenizer),
         'llama-aihub-qlora-bf16': ('traintogpb/llama-2-en2ko-translator-7b-qlora-bf16-upscaled', LlamaForCausalLM, LlamaTokenizer),
-        'llama-aihub-qlora-fp16': ('../../training/llama_qlora/models/baseline-merged-fp16', LlamaForCausalLM, LlamaTokenizer),
-        'llama-aihub-qlora-bf16-vllm': ('traintogpb/llama-2-en2ko-translator-7b-qlora-bf16-upscaled', None, None),
-        'llama-aihub-qlora-augment': (('beomi/open-llama-2-ko-7b', '../../training/llama_qlora/models/augment'), LlamaForCausalLM, LlamaTokenizer),
-        'llama-aihub-qlora-reverse-new': (('beomi/open-llama-2-ko-7b', '../../training/llama_qlora/models/continuous-reverse-new'), LlamaForCausalLM, LlamaTokenizer),
-        'llama-aihub-qlora-reverse-overlap': (('beomi/open-llama-2-ko-7b', '../../training/llama_qlora/models/continuous-reverse-overlap'), LlamaForCausalLM, LlamaTokenizer),
+        'llama-aihub-qlora-fp16': (os.path.join(SCRIPT_DIR, '../../training/llama_qlora/models/baseline-merged-fp16'), LlamaForCausalLM, LlamaTokenizer),
+        'llama-aihub-qlora-bf16-vllm': ('traintogpb/llama-2-en2ko-translator-7b-qlora-bf16-upscaled', None, LlamaTokenizer),
+        'llama-aihub-qlora-augment': (('beomi/open-llama-2-ko-7b', os.path.join(SCRIPT_DIR, '../../training/llama_qlora/models/augment')), LlamaForCausalLM, LlamaTokenizer),
+        'llama-aihub-qlora-reverse-new': (('beomi/open-llama-2-ko-7b', os.path.join(SCRIPT_DIR, '../../training/llama_qlora/models/continuous-reverse-new')), LlamaForCausalLM, LlamaTokenizer),
+        'llama-aihub-qlora-reverse-overlap': (('beomi/open-llama-2-ko-7b', os.path.join(SCRIPT_DIR, '../../training/llama_qlora/models/continuous-reverse-overlap')), LlamaForCausalLM, LlamaTokenizer),
     }
     assert model_type in model_mapping.keys(), 'Wrong model type'
 
@@ -106,8 +108,11 @@ def load_model_and_tokenizer(model_type):
         if '16' in model_type:
             if model_type.endswith('vllm'):                # bf16-vllm
                 model = LLM(model=model_name, seed=SEED)
-            else:                                          # bf16, fp16
-                model = model_cls.from_pretrained(model_name)
+            else:
+                if model_type.endswith('bf16'):
+                    model = model_cls.from_pretrained(model_name, torch_dtype=torch.bfloat16)
+                elif model_type.endswith('fp16'):
+                    model = model_cls.from_pretrained(model_name, torch_dtype=torch.float16)
         else:                                              # baseline, augment, reverse-new, reverse-overlap
             bnb_config = BitsAndBytesConfig(
                 load_in_4bit=True,
@@ -263,40 +268,54 @@ if __name__ == '__main__':
     import argparse
     
     parser = argparse.ArgumentParser()
-    parser.add_argument("--dataset", type=str, default='aihub', help="Dataset for inference")
+    parser.add_argument("--model_type", type=str, default='llama-bf16', help="Pre-trained language model type for inference (e.g., llama-bf16)")
     parser.add_argument("--inference_type", type=str, default='sentence', help="Inference type (sentence or dataset)")
+    parser.add_argument("--dataset", type=str, default='sample', help="Dataset path for inference (only for dataset inference, preset: aihub / flores / sample, or custom path to a CSV file)")
+    parser.add_argument("--sentence", type=str, default="NMIXX is a South Korean girl group that made a comeback on January 15, 2024 with their new song 'DASH'.", help="Input English text for inference (only for sentence inference)")
     args = parser.parse_args()
     dataset = args.dataset
     
     source_column = "en"
-    file_path_dict = {
-        'aihub': "../data/aihub_test_tiny_uniform100.csv",
-        'flores': "../data/flores_test.csv"
+    if args.dataset.endswith('.csv'):
+        file_path = args.dataset
+    else:
+        file_path_dict = {
+            'sample': os.path.join(SCRIPT_DIR, "../../sample_texts_for_inference.csv"),
+            'aihub': os.path.join(SCRIPT_DIR, "../test_tiny_uniform100_inferenced.csv"),
+            'flores': os.path.join(SCRIPT_DIR, "../results/test_flores_inferenced.csv")
+        }
+        file_path = file_path_dict[dataset]
+
+    # model_type_candidates = [
+    #     'mbart',
+    #     'nllb-600m',
+    #     'madlad',
+    #     'llama',
+    #     'mbart-aihub',
+    #     'llama-aihub-qlora',
+    #     'llama-aihub-qlora-bf16',
+    #     'llama-aihub-qlora-fp16',
+    #     'llama-aihub-qlora-bf16-vllm', # Best model
+    #     'llama-aihub-qlora-augment',
+    #     'llama-aihub-qlora-reverse-new',
+    #     'llama-aihub-qlora-reverse-overlap'
+    # ]
+    model_type_dict = {
+        'mbart': 'mbart',
+        'nllb': 'nllb-600m',
+        'madlad': 'madlad',
+        'llama': 'llama-aihub-qlora',
+        'llama-bf16': 'llama-aihub-qlora-bf16',
+        'llama-bf16-vllm': 'llama-aihub-qlora-bf16-vllm',
     }
-    file_path = file_path_dict[dataset]
+    
+    model_type = model_type_dict[args.model_type]
+    print(f"Inference model: {model_type.upper()}")
 
-    model_types = [
-        # 'mbart',
-        # 'nllb-600m',
-        # 'madlad',
-        # 'llama',
-        # 'mbart-aihub',
-        # 'llama-aihub-qlora',
-        # 'llama-aihub-qlora-bf16',
-        # 'llama-aihub-qlora-fp16',
-        'llama-aihub-qlora-bf16-vllm', # Best model
-        # 'llama-aihub-qlora-augment',
-        # 'llama-aihub-qlora-reverse-new',
-        # 'llama-aihub-qlora-reverse-overlap'
-    ]
-    for model_type in model_types:
-        print(f"Inference model: {model_type.upper()}")
-
-        if args.inference_type == 'dataset':
-            target_column = model_type + "_trans"
-            inference(model_type, source_column, target_column, file_path, print_result=True)
-        
-        if args.inference_type == 'sentence':
-            text_en = "NMIXX is a South Korean girl group that made a comeback on January 15, 2024 with their new song 'DASH'."
-            translation = inference_single(model_type, text_en)
-            print(translation)
+    if args.inference_type == 'dataset':
+        target_column = model_type + "_trans"
+        inference(model_type, source_column, target_column, file_path, print_result=True)
+    
+    if args.inference_type == 'sentence':
+        translation = inference_single(model_type, args.sentence)
+        print(translation)
