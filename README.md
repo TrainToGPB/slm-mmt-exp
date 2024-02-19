@@ -26,6 +26,7 @@ streamlit run ./app.py --server.fileWatcherType=none --server.port=30001
 python ./inference/codes/model_inferences.py
 ```
 __Arguments__
+
 __`--model_type`__ (default: `llama-bf16`)
 - `mbart`: [facebook/mbart-large-50-many-to-many-mmt](https://huggingface.co/facebook/mbart-large-50-many-to-many-mmt)
 - `nllb`: [facebook/nllb-200-distilled-600M](https://huggingface.co/facebook/nllb-200-distilled-600M)
