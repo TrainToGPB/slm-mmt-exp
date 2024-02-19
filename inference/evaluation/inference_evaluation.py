@@ -490,6 +490,7 @@ if __name__ == '__main__':
         'llama-aihub-qlora_trans',
         'llama-aihub-qlora-bf16_trans',
         'llama-aihub-qlora-fp16_trans',
+        'llama-aihub-qlora-bf16-vllm_trans',
         'llama-aihub-qlora-augment_trans',
         'llama-aihub-qlora-reverse-new_trans',
         'llama-aihub-qlora-reverse-overlap_trans',
