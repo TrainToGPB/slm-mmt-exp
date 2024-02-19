@@ -21,7 +21,7 @@ def load_qlora_model(gpu_id=0):
     DEVICE = torch.device(f'cuda:{gpu_id}')
 
     plm_name = 'beomi/open-llama-2-ko-7b'
-    adapter_path = './training/llama_qlora/models/baseline'
+    adapter_path = 'traintogpb/llama-2-en2ko-translator-7b-qlora-adapter'
 
     bnb_config = BitsAndBytesConfig(
         load_in_4bit=True,
@@ -49,7 +49,7 @@ def load_qlora_model(gpu_id=0):
 def load_bf16_model(gpu_id=1):
     DEVICE = torch.device(f'cuda:{gpu_id}')
 
-    model_path = './training/llama_qlora/models/baseline-merged-bf16'
+    model_path = 'traintogpb/llama-2-en2ko-translator-7b-qlora-bf16-upscaled'
     model = AutoModelForCausalLM.from_pretrained(model_path, torch_dtype=torch.bfloat16)
     model.to(DEVICE)
     return model, model_path, gpu_id
@@ -57,7 +57,7 @@ def load_bf16_model(gpu_id=1):
 
 @st.cache_resource
 def load_bf16_vllm_model(gpu_id=2):
-    model_path = './training/llama_qlora/models/baseline-merged-bf16'
+    model_path = 'traintogpb/llama-2-en2ko-translator-7b-qlora-bf16-upscaled'
     model = LLM(model_path, seed=42)
     return model, model_path, gpu_id
 
