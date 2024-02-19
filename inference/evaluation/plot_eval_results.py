@@ -51,6 +51,7 @@ def plot_bar(eval_dict, metric_name, ylim=None, show_chart=True, save_path=None)
     df['Translator'] = df['Translator'].apply(lambda x: x.replace('_trans', ''))
 
     plt.figure(figsize=(15, 8))
+    plt.rcParams['font.size'] = 13
     sns.barplot(x='Translator', y=metric_name, data=df, palette='rainbow')
     if ylim is not None:
         plt.ylim(ylim[0], ylim[1])
@@ -93,6 +94,7 @@ def plot_bar_groupby_source(
     font_name = fm.FontProperties(fname=font_path).get_name()
     plt.rc('font', family=font_name)
     plt.rcParams['axes.unicode_minus'] = False
+    plt.rcParams['font.size'] = 13
     sns.set(font='NanumGothic')
 
     # Reshape dict_single_metric for seaborn
@@ -162,6 +164,7 @@ def plot_bar_groupby_translator(
     font_name = fm.FontProperties(fname=font_path).get_name()
     plt.rc('font', family=font_name)
     plt.rcParams['axes.unicode_minus'] = False
+    plt.rcParams['font.size'] = 13
     sns.set(font='NanumGothic')
 
     # Reshape dict_single_metric for seaborn
@@ -214,6 +217,7 @@ def plot_speed(
     df['Translator'] = df['Translator'].apply(lambda x: x.replace('_trans', ''))
     
     plt.figure(figsize=(15, 8))
+    plt.rcParams['font.size'] = 13
     sns.barplot(x='Translator', y='Speed', data=df, palette='rainbow')
     if ylim is not None:
         plt.ylim(ylim[0], ylim[1])
@@ -244,28 +248,29 @@ if __name__ == '__main__':
         yaml_path = '../results/test_tiny_uniform100_metrics.yaml'
         yaml_path_by_source = '../results/test_tiny_uniform100_metrics_by_source.yaml'
         yaml_path_speed = '../results/test_tiny_uniform100_speeds.yaml'
-        img_save_path = '../results/chart_images/aihub_speed_llamas.png'
+        img_save_path = '../results/chart_images/aihub_speed_main.png'
     elif dataset == 'flores':
         yaml_path = '../results/test_flores_metrics.yaml'
         yaml_path_speed = '../results/test_flores_speeds.yaml'
-        img_save_path = '../results/chart_images/flores_speed_llamas.png'
+        img_save_path = '../results/chart_images/flores_speed_main.png'
 
     source_list = [111, 124, 125, 126, 563, 71265, 71266, 71382]
     column_list = [
-        'llama-aihub-qlora_trans',
-        # 'papago_trans',
-        # 'google_trans', 
-        # 'deepl_trans', 
-        # 'mbart_trans', 
-        # 'nllb-600m_trans', 
-        # 'madlad_trans', 
-        # 'mbart-aihub_trans', 
-        'llama-aihub-qlora-bf16_trans',
         'llama-aihub-qlora-bf16-vllm_trans',
-        'llama-aihub-qlora-fp16_trans',
-        'llama-aihub-qlora-augment_trans',
-        'llama-aihub-qlora-reverse-new_trans',
-        'llama-aihub-qlora-reverse-overlap_trans',
+        # 'llama-aihub-qlora_trans',
+        'papago_trans',
+        'google_trans', 
+        'deepl_trans', 
+        'mbart_trans', 
+        'nllb-600m_trans', 
+        'madlad_trans', 
+        # 'mbart-aihub_trans', 
+        # 'llama-aihub-qlora-bf16_trans',
+        # 'llama-aihub-qlora-fp16_trans',
+        # 'llama-aihub-qlora-bf16-vllm_trans',
+        # 'llama-aihub-qlora-augment_trans',
+        # 'llama-aihub-qlora-reverse-new_trans',
+        # 'llama-aihub-qlora-reverse-overlap_trans',
     ]
     metric_list_detail = ['sacrebleu', 'bertscore'] # 'bleu', 'sacrebleu', 'rouge_1', 'rouge_2', 'wer', 'bertscore'
 
@@ -303,7 +308,7 @@ if __name__ == '__main__':
                 ylim_by_source = (70, 100)
                 ylim_by_translator = (70, 100)
 
-            save_path = f'../results/chart_images/{dataset}_{metric}.png'
+            save_path = f'../results/chart_images/{dataset}_{metric}_main.png'
             plot_bar(
                 dict_metric_column[metric],
                 metric_name=metric_name,
@@ -313,7 +318,7 @@ if __name__ == '__main__':
             )
 
             if dataset == 'aihub':
-                save_path_groupby_source = f'../results/chart_images/aihub_{metric}_groupby_dataset.png'
+                save_path_groupby_source = f'../results/chart_images/aihub_{metric}_groupby_dataset_main.png'
                 plot_bar_groupby_source(
                     dict_metric_column_source[metric],
                     metric_name=metric_name,
@@ -324,7 +329,7 @@ if __name__ == '__main__':
                     save_path=save_path_groupby_source
                 )
 
-                save_path_groupby_translator = f'../results/chart_images/aihub_{metric}_groupby_translator.png'
+                save_path_groupby_translator = f'../results/chart_images/aihub_{metric}_groupby_translator_main.png'
                 plot_bar_groupby_translator(
                     dict_metric_column_source[metric],
                     metric_name=metric_name,
