@@ -18,14 +18,14 @@ The following models are supported:
 - llama-aihub-qlora-reverse-overlap (llama-aihub-qlora 체크포인트에서 동일한 데이터로 한-영 역방향 학습)
 
 The following datasets are supported:
-- aihub: AI Hub integrated dataset (ref: 추가 예정)
-- flores: FLoRes-101 dataset (ref: 추가 예정)
+- aihub: AI Hub integrated dataset (ref: https://huggingface.co/datasets/traintogpb/aihub-koen-translation-integrated-tiny-100k)
+- flores: FLoRes-101 dataset (ref: https://huggingface.co/datasets/gsarti/flores_101)
 
 CLI example:
 - Inference on the AI Hub dataset:
-    $ python model_inferences.py --dataset aihub --inference_type dataset
+    $ python model_inferences.py --model_type=mbart --inference_type=dataset --dataset=aihub
 - Inference on a single sentence:
-    $ python model_inferences.py --dataset aihub --inference_type sentence
+    $ python model_inferences.py --model_type=llama-bf16-vllm --inference_type=sentence --sentence="Hello, world!"
 
 Output:
 - Translated dataset file (CSV format)
