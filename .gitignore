@@ -170,9 +170,11 @@ legacy_translation/
 sehong_legacy/
 
 # datasets
+*.zip
 *.csv
 *.tsv
 *.xlsx
+*.json
 aihub-koen-translation-integrated-base-10m/
 aihub-koen-translation-integrated-mini-1m/
 aihub-koen-translation-integrated-tiny-100k/
