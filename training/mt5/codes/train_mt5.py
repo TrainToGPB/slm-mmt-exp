@@ -41,7 +41,27 @@ def set_src2tgt(example, idx, mode):
     return example
 
 
-def add_special_tokens_by_mode(tokenizer, src_sign=None, tgt_sign=None):
+def add_special_tokens_by_mode(tokenizer, mode, src_sign=None, tgt_sign=None):
+    src_sign, tgt_sign = src_sign, tgt_sign
+    
+    if mode.endswith('token'):
+        if 'separate' in mode:
+            src_sign, tgt_sign = '<en>', '<ko>'
+        elif 'first' in mode:
+            if mode.startswith('en2ko'):
+                src_sign, tgt_sign = '<en2ko>', None
+            elif mode.startswith('ko2en'):
+                src_sign, tgt_sign = '<ko2en>', None
+            elif mode.startswith('mixed'):
+                src_sign, tgt_sign = '<en2ko>', '<ko2en>'
+        elif 'second' in mode:
+            if mode.startswith('en2ko'):
+                src_sign, tgt_sign = None, '<en2ko>'
+            elif mode.startswith('ko2en'):
+                src_sign, tgt_sign = None, '<ko2en>'
+            elif mode.startswith('mixed'):
+                src_sign, tgt_sign = '<en2ko>', '<ko2en>'
+
     if src_sign is not None:
         tokenizer.add_special_tokens({'additional_special_tokens': [src_sign]})
         print("Source sign:", src_sign)
@@ -62,22 +82,20 @@ def preprocess_example(example, mode, max_length, tokenizer):
         src_sign = None
         tgt_sign = None
         src_text = example[src_col]
-        tgt_text = example[tgt_col]
     elif 'separate' in mode:
         src_sign = f'<{src_col}>'
         tgt_sign = f'<{tgt_col}>'
-        src_text = ' '.join([src_sign, example[src_col]])
-        tgt_text = ' '.join([tgt_sign, example[tgt_col]])
+        src_text = ' '.join([src_sign, example[src_col], tgt_sign])
     elif 'first' in mode:
         src_sign = f'<{src_col}2{tgt_col}>'
         tgt_sign = None
         src_text = ' '.join([src_sign, example[src_col]])
-        tgt_text = example[tgt_col]
     elif 'second' in mode:
         src_sign = None
         tgt_sign = f'<{src_col}2{tgt_col}>'
-        src_text = example[src_col]
-        tgt_text = ' '.join([tgt_sign, example[tgt_col]])
+        src_text = ' '.join([example[src_col], tgt_sign])
+
+    tgt_text = example[tgt_col]
 
     model_inputs = tokenizer(
         src_text, 
@@ -109,25 +127,8 @@ def train(args):
     set_seed(args.seed)
 
     model, tokenizer = load_model_and_tokenizer(args.plm_name)
-    if args.translation_mode.endswith('token'):
-        if 'separate' in args.translation_mode:
-            src_sign, tgt_sign = '<en>', '<ko>'
-        elif 'first' in args.translation_mode:
-            if args.translation_mode.startswith('en2ko'):
-                src_sign, tgt_sign = '<en2ko>', None
-            elif args.translation_mode.startswith('ko2en'):
-                src_sign, tgt_sign = '<ko2en>', None
-            elif args.translation_mode.startswith('mixed'):
-                src_sign, tgt_sign = '<en2ko>', '<ko2en>'
-        elif 'second' in args.translation_mode:
-            if args.translation_mode.startswith('en2ko'):
-                src_sign, tgt_sign = None, '<en2ko>'
-            elif args.translation_mode.startswith('ko2en'):
-                src_sign, tgt_sign = None, '<ko2en>'
-            elif args.translation_mode.startswith('mixed'):
-                src_sign, tgt_sign = '<en2ko>', '<ko2en>'
 
-        add_special_tokens_by_mode(tokenizer, src_sign, tgt_sign)
+    add_special_tokens_by_mode(tokenizer, args.translation_mode)
 
     if args.gradient_checkpointing:
         model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": True})
