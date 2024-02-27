@@ -190,6 +190,9 @@ aihub-koen-translation-integrated-tiny-augmented-240k/
 71382_broadcast_contents/
 71475_nmt_quality_assurance/
 
+# training
+*.sh
+
 # models
 models/
 
