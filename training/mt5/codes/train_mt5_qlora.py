@@ -2,6 +2,7 @@
 import os
 os.environ['CUDA_VISIBLE_DEVICES'] = '0,1,2,3'
 os.environ['TOKENIZERS_PARALLELISM'] = 'false'
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 import sys
 from collections import defaultdict
 
@@ -12,37 +13,52 @@ import wandb
 import evaluate
 import bert_score
 from datasets import load_dataset
-from accelerate import Accelerator
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 from transformers import Seq2SeqTrainer, Seq2SeqTrainingArguments
 from transformers import default_data_collator
-from peft import LoraConfig
-from peft import get_peft_model, prepare_model_for_kbit_training
+import bitsandbytes as bnb
 from transformers import BitsAndBytesConfig
+from peft import LoraConfig
+from peft import get_peft_model
 
 # custom
+sys.path.append('./')
 sys.path.append('../../')
 from training_utils import set_seed
-from argument import parse_arguments_mt5
+from argument import parse_arguments_mt5_qlora
 sys.path.append('../../../../') # Use your own path
 from custom_utils.general_secret import WANDB_CLIENT_KEY # Use your own path
 
 
-def load_model_and_tokenizer(plm_name, device_map, use_gradient_checkpointing, bnb_config, lora_config):
+def load_model_and_tokenizer(plm_name, device_map, bnb_config, lora_config):
+    max_memory = '24000MB'
+    max_memory = {i: max_memory for i in range(torch.cuda.device_count())}
+    device_map = args.device_map
+
+    if os.environ.get('LOCAL_RANK') is not None:
+        print("LOCAL_RANK:", os.environ.get('LOCAL_RANK'))
+        local_rank = int(os.environ.get('LOCAL_RANK', '0'))
+        device_map = {'': local_rank}
+        max_memory = {'': max_memory[local_rank]}
+
     model = AutoModelForSeq2SeqLM.from_pretrained(
         plm_name,
         quantization_config=bnb_config,
-        torch_dtype=bnb_config.bnb_4bit_compute_dtype,
         device_map=device_map,
+        max_memory=max_memory,
+        torch_dtype=bnb_config.bnb_4bit_compute_dtype,
+        trust_remote_code=True
     )
     model.config.use_cache = False
     model.config.pretraining_tp = 1
 
-    model = prepare_model_for_kbit_training(
-        model, 
-        use_gradient_checkpointing=use_gradient_checkpointing,
-        gradient_checkpointing_kwargs={"use_reentrant": True}
-    )
+    if hasattr(model, "enable_input_require_grads"):
+        model.enable_input_require_grads()
+    else:
+        def make_inputs_require_grad(module, input, output):
+            output.requires_grad_(True)
+        model.get_input_embeddings().register_forward_hook(make_inputs_require_grad)
+
     model = get_peft_model(model, lora_config)
     model.print_trainable_parameters()
     
@@ -149,12 +165,24 @@ def calculate_warmup_steps(epochs, dataset_size, batch_size, gradient_accumulati
     return warmup_steps
 
 
+def find_all_linear_names(args, model):
+    cls = bnb.nn.Linear4bit if args.use_4bit else (bnb.nn.Linear8bitLt if args.use_8bit else torch.nn.Linear)
+    lora_module_names = set()
+    for name, module in model.named_modules():
+        if isinstance(module, cls):
+            names = name.split('.')
+            lora_module_names.add(names[0] if len(names) == 1 else names[-1])
+    if 'lm_head' in lora_module_names: # needed for 16-bit
+        lora_module_names.remove('lm_head')
+    return list(lora_module_names)
+
+
 def train(args):
     set_seed(args.seed)
 
     compute_dtype = getattr(torch, args.bnb_4bit_compute_dtype)
     bnb_config = BitsAndBytesConfig(
-        load_in_4bit=args.load_in_4bit,
+        load_in_4bit=args.use_4bit,
         bnb_4bit_quant_type=args.bnb_4bit_quant_type,
         bnb_4bit_compute_dtype=compute_dtype,
         bnb_4bit_use_double_quant=args.use_double_quant,
@@ -173,7 +201,6 @@ def train(args):
     model, tokenizer = load_model_and_tokenizer(
         args.plm_name,
         device_map=args.device_map,
-        use_gradient_checkpointing=args.gradient_checkpointing,
         bnb_config=bnb_config,
         lora_config=lora_config,
     )
@@ -314,38 +341,22 @@ def train(args):
 
         return result
 
-    if args.use_fsdp:
-        # accelerate config: /home/tmax/.cache/huggingface/accelerate/default_config.yaml
-        accelerator = Accelerator()
-        trainer = accelerator.prepare(
-            Seq2SeqTrainer(
-                model=model,
-                tokenizer=tokenizer,
-                args=training_args,
-                train_dataset=train_dataset,
-                eval_dataset=eval_dataset,
-                data_collator=default_data_collator,
-                compute_metrics=compute_metrics,
-                preprocess_logits_for_metrics=preprocess_logits_for_metrics
-            )
-        )
-    else:
-        trainer = Seq2SeqTrainer(
-            model=model,
-            tokenizer=tokenizer,
-            args=training_args,
-            train_dataset=train_dataset,
-            eval_dataset=eval_dataset,
-            data_collator=default_data_collator,
-            compute_metrics=compute_metrics,
-            preprocess_logits_for_metrics=preprocess_logits_for_metrics
-        )
 
+    trainer = Seq2SeqTrainer(
+        model=model,
+        tokenizer=tokenizer,
+        args=training_args,
+        train_dataset=train_dataset,
+        eval_dataset=eval_dataset,
+        data_collator=default_data_collator,
+        compute_metrics=compute_metrics,
+        preprocess_logits_for_metrics=preprocess_logits_for_metrics
+    )
     trainer.train()
     trainer.save_model(args.output_dir)
 
 
 if __name__ == '__main__':
-    yaml_path = './mt5_config.yaml'
-    args = parse_arguments_mt5(yaml_path)
+    yaml_path = os.path.join(SCRIPT_DIR, './mt5_qlora_config.yaml')
+    args = parse_arguments_mt5_qlora(yaml_path)
     train(args)
