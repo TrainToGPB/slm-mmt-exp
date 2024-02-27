@@ -55,6 +55,7 @@ from transformers import MarianMTModel, MarianTokenizer
 from transformers import MBartForConditionalGeneration, MBart50Tokenizer
 from transformers import M2M100ForConditionalGeneration, NllbTokenizer
 from transformers import T5ForConditionalGeneration, T5Tokenizer
+from transformers import MT5ForConditionalGeneration, T5Tokenizer
 from transformers import BitsAndBytesConfig
 
 # custom
@@ -95,6 +96,7 @@ def load_model_and_tokenizer(model_type):
         'llama-aihub-qlora-augment': (('beomi/open-llama-2-ko-7b', os.path.join(SCRIPT_DIR, '../../training/llama_qlora/models/augment')), LlamaForCausalLM, LlamaTokenizer),
         'llama-aihub-qlora-reverse-new': (('beomi/open-llama-2-ko-7b', os.path.join(SCRIPT_DIR, '../../training/llama_qlora/models/continuous-reverse-new')), LlamaForCausalLM, LlamaTokenizer),
         'llama-aihub-qlora-reverse-overlap': (('beomi/open-llama-2-ko-7b', os.path.join(SCRIPT_DIR, '../../training/llama_qlora/models/continuous-reverse-overlap')), LlamaForCausalLM, LlamaTokenizer),
+        'mt5-aihub-base-fft': (os.path.join(SCRIPT_DIR, '../../training/mt5/models/base-fft-en2ko-separate-token-constlr'), MT5ForConditionalGeneration, T5Tokenizer),
     }
     assert model_type in model_mapping.keys(), 'Wrong model type'
 
@@ -167,9 +169,30 @@ def translate(model, tokenizer, text, model_type, print_result=False, max_length
         model.to(DEVICE)
 
     if model_type == 'madlad':
-        text = ' '.join(['<2ko>', text])
+        text = f"<2ko> {text}"
     elif 'llama' in model_type:
+        # few_shot_dict = {
+        #     "English": ["Now K-Pop has become a dream of many Brazilian teenagers, who are eager to have more stages and opportunities to fulfill it.",
+        #                 "Aichi Prefecture, one of the regions where the state of emergency is being reviewed early, had 86 new cases the day before, and fell below 100 in four days.",
+        #                 "The scenery of the town is really pretty, isn't it?",
+        #                 "Elon Musk, the founder of the private space company SpaceX, promised a trip to Mars in 2020.",
+        #                 "Would you tell us what actions make the advertisements pop up?",
+        #                 "If you don't pay, you will suffer some losses when it comes to using your credit cards.",
+        #                 "To efficiently examine agenda items, the Steering Committee may establish subcommittees for each field by resolution.",
+        #                 "The human brain is known to have only two percent of total body weight, but to consume 20 percent of its total energy."],
+        #     "한국어": ["이제 K-Pop은 많은 브라질 청소년들의 꿈이 되었고 그 꿈을 펼칠 수 있는 무대와 기회들이 더 많아지길 브라질 청소년들은 간절히 바라고 있다.",
+        #                 "긴급사태 조기 해제가 검토되는 지역 중 하나인 아이치현은 전날 신규 확진자가 86명으로 4일 만에 100명 밑으로 떨어졌다.",
+        #                 "마을의 풍경이 정말 예쁘죠?",
+        #                 "민간 우주기업 스페이스엑스의 창업자 일론 머스크는 2020년 화성여행을 장담했다.",
+        #                 "어떤 동작을 취했을 때 광고가 뜨는지 말씀해주시겠어요?",
+        #                 "결제하지 않을 경우 카드 사용에 불이익이 있을 수 있습니다.",
+        #                 "운영위원회는 안건을 효율적으로 심사하기 위하여 그 의결로 분야별 소위원회를 둘 수 있다.",
+        #                 "인간의 뇌는 전체 체중의 2%에 지나지 않지만 전체 에너지의 20%를 소모한다고 알려져 있다."]
+        # }
+        # shot_num = 0
         text = f"### English: {text}\n### 한국어: "
+    elif model_type.startswith('mt5'):
+        text = f"<en> {text} <ko>"
 
     if 'mbart' in model_type:
         src_lang = 'en_XX'
@@ -281,7 +304,7 @@ if __name__ == '__main__':
     else:
         file_path_dict = {
             'sample': os.path.join(SCRIPT_DIR, "../../sample_texts_for_inference.csv"),
-            'aihub': os.path.join(SCRIPT_DIR, "../test_tiny_uniform100_inferenced.csv"),
+            'aihub': os.path.join(SCRIPT_DIR, "../results/test_tiny_uniform100_inferenced.csv"),
             'flores': os.path.join(SCRIPT_DIR, "../results/test_flores_inferenced.csv")
         }
         file_path = file_path_dict[dataset]
@@ -307,13 +330,14 @@ if __name__ == '__main__':
         'llama': 'llama-aihub-qlora',
         'llama-bf16': 'llama-aihub-qlora-bf16',
         'llama-bf16-vllm': 'llama-aihub-qlora-bf16-vllm',
+        'mt5-fft': 'mt5-aihub-base-fft'
     }
     
     model_type = model_type_dict[args.model_type]
     print(f"Inference model: {model_type.upper()}")
 
     if args.inference_type == 'dataset':
-        target_column = model_type + "_trans"
+        target_column = model_type + "-1shot_trans"
         inference(model_type, source_column, target_column, file_path, print_result=True)
     
     if args.inference_type == 'sentence':
