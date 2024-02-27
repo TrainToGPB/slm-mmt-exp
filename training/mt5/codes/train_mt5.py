@@ -2,6 +2,7 @@
 import os
 os.environ['CUDA_VISIBLE_DEVICES'] = '0,1,2,3'
 os.environ['TOKENIZERS_PARALLELISM'] = 'false'
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 import sys
 from collections import defaultdict
 
@@ -18,6 +19,7 @@ from transformers import Seq2SeqTrainer, Seq2SeqTrainingArguments
 from transformers import default_data_collator
 
 # custom
+sys.path.append('./')
 sys.path.append('../../')
 from training_utils import set_seed
 from argument import parse_arguments_mt5
@@ -296,6 +298,6 @@ def train(args):
 
 
 if __name__ == '__main__':
-    yaml_path = './mt5_config.yaml'
+    yaml_path = os.path.join(SCRIPT_DIR, './mt5_config.yaml')
     args = parse_arguments_mt5(yaml_path)
     train(args)
