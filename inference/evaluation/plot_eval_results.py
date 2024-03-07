@@ -271,6 +271,7 @@ if __name__ == '__main__':
         # 'llama-aihub-qlora-augment_trans',
         # 'llama-aihub-qlora-reverse-new_trans',
         # 'llama-aihub-qlora-reverse-overlap_trans',
+        'mt5-aihub-base-fft_trans'
     ]
     metric_list_detail = ['sacrebleu', 'bertscore'] # 'bleu', 'sacrebleu', 'rouge_1', 'rouge_2', 'wer', 'bertscore'
 
