@@ -96,7 +96,8 @@ def load_model_and_tokenizer(model_type):
         'llama-aihub-qlora-augment': (('beomi/open-llama-2-ko-7b', os.path.join(SCRIPT_DIR, '../../training/llama_qlora/models/augment')), LlamaForCausalLM, LlamaTokenizer),
         'llama-aihub-qlora-reverse-new': (('beomi/open-llama-2-ko-7b', os.path.join(SCRIPT_DIR, '../../training/llama_qlora/models/continuous-reverse-new')), LlamaForCausalLM, LlamaTokenizer),
         'llama-aihub-qlora-reverse-overlap': (('beomi/open-llama-2-ko-7b', os.path.join(SCRIPT_DIR, '../../training/llama_qlora/models/continuous-reverse-overlap')), LlamaForCausalLM, LlamaTokenizer),
-        'mt5-aihub-base-fft': (os.path.join(SCRIPT_DIR, '../../training/mt5/models/base-fft-en2ko-separate-token-constlr'), MT5ForConditionalGeneration, T5Tokenizer),
+        'madlad-aihub-7b-bt-qlora': (('google/madlad400-7b-mt-bt', os.path.join(SCRIPT_DIR, '../../training/madlad/models/7b-bt-en2ko')), T5ForConditionalGeneration, T5Tokenizer),
+        'mt5-aihub-base-fft': (os.path.join(SCRIPT_DIR, '../../training/mt5/models/base-fft-en2ko-separate-token-constlr-70epoch'), MT5ForConditionalGeneration, T5Tokenizer),
     }
     assert model_type in model_mapping.keys(), 'Wrong model type'
 
@@ -106,16 +107,16 @@ def load_model_and_tokenizer(model_type):
         model_name, adapter_path = model_name[0], model_name[1]
     
     # llama-aihub-qlora, llama-aihub-qlora-bf16, llama-aihub-qlora-fp16
-    if model_type.startswith('llama-aihub-qlora'):
+    if 'qlora' in model_type:
         if '16' in model_type:
-            if model_type.endswith('vllm'):                # bf16-vllm
+            if model_type.endswith('vllm'):
                 model = LLM(model=model_name, seed=SEED)
             else:
                 if model_type.endswith('bf16'):
                     model = model_cls.from_pretrained(model_name, torch_dtype=torch.bfloat16)
                 elif model_type.endswith('fp16'):
                     model = model_cls.from_pretrained(model_name, torch_dtype=torch.float16)
-        else:                                              # baseline, augment, reverse-new, reverse-overlap
+        else:
             bnb_config = BitsAndBytesConfig(
                 load_in_4bit=True,
                 bnb_4bit_quant_type='nf4',
@@ -133,8 +134,14 @@ def load_model_and_tokenizer(model_type):
                 adapter_path, 
                 torch_dtype=torch_dtype
             )
+            tokenizer = tokenizer_cls.from_pretrained(model_name)
 
+    # opus, mbart, nllb-600m, nllb-1.3b, madlad, mbart-aihub, llama
+    else:
+        model = model_cls.from_pretrained(model_name)
         tokenizer = tokenizer_cls.from_pretrained(model_name)
+
+    if model_type.startswith('llama'):
         tokenizer.pad_token = "</s>"
         tokenizer.pad_token_id = 2
         tokenizer.eos_token = "<|endoftext|>"
@@ -143,14 +150,10 @@ def load_model_and_tokenizer(model_type):
         tokenizer.padding_side = 'right'
         tokenizer.model_max_length = 768
 
-    # opus, mbart, nllb-600m, nllb-1.3b, madlad, mbart-aihub, llama
-    else:
-        model = model_cls.from_pretrained(model_name)
-        tokenizer = tokenizer_cls.from_pretrained(model_name)
-
     return model, tokenizer
 
 
+@torch.no_grad()
 def translate(model, tokenizer, text, model_type, print_result=False, max_length=512):
     """
     Translate the input text using the pre-trained language model.
@@ -168,28 +171,9 @@ def translate(model, tokenizer, text, model_type, print_result=False, max_length
     if not model_type.endswith('vllm'):
         model.to(DEVICE)
 
-    if model_type == 'madlad':
+    if model_type.startswith('madlad'):
         text = f"<2ko> {text}"
     elif 'llama' in model_type:
-        # few_shot_dict = {
-        #     "English": ["Now K-Pop has become a dream of many Brazilian teenagers, who are eager to have more stages and opportunities to fulfill it.",
-        #                 "Aichi Prefecture, one of the regions where the state of emergency is being reviewed early, had 86 new cases the day before, and fell below 100 in four days.",
-        #                 "The scenery of the town is really pretty, isn't it?",
-        #                 "Elon Musk, the founder of the private space company SpaceX, promised a trip to Mars in 2020.",
-        #                 "Would you tell us what actions make the advertisements pop up?",
-        #                 "If you don't pay, you will suffer some losses when it comes to using your credit cards.",
-        #                 "To efficiently examine agenda items, the Steering Committee may establish subcommittees for each field by resolution.",
-        #                 "The human brain is known to have only two percent of total body weight, but to consume 20 percent of its total energy."],
-        #     "한국어": ["이제 K-Pop은 많은 브라질 청소년들의 꿈이 되었고 그 꿈을 펼칠 수 있는 무대와 기회들이 더 많아지길 브라질 청소년들은 간절히 바라고 있다.",
-        #                 "긴급사태 조기 해제가 검토되는 지역 중 하나인 아이치현은 전날 신규 확진자가 86명으로 4일 만에 100명 밑으로 떨어졌다.",
-        #                 "마을의 풍경이 정말 예쁘죠?",
-        #                 "민간 우주기업 스페이스엑스의 창업자 일론 머스크는 2020년 화성여행을 장담했다.",
-        #                 "어떤 동작을 취했을 때 광고가 뜨는지 말씀해주시겠어요?",
-        #                 "결제하지 않을 경우 카드 사용에 불이익이 있을 수 있습니다.",
-        #                 "운영위원회는 안건을 효율적으로 심사하기 위하여 그 의결로 분야별 소위원회를 둘 수 있다.",
-        #                 "인간의 뇌는 전체 체중의 2%에 지나지 않지만 전체 에너지의 20%를 소모한다고 알려져 있다."]
-        # }
-        # shot_num = 0
         text = f"### English: {text}\n### 한국어: "
     elif model_type.startswith('mt5'):
         text = f"<en> {text} <ko>"
@@ -204,7 +188,7 @@ def translate(model, tokenizer, text, model_type, print_result=False, max_length
         tgt_lang = 'kor_Hang'
         tokenizer.src_lang = src_lang
         tokenizer.tgt_lang = tgt_lang
-
+    
     inputs = tokenizer(text, return_tensors="pt", max_length=max_length, truncation=True)
     inputs = {key: value.to(DEVICE) for key, value in inputs.items()}
 
@@ -224,20 +208,24 @@ def translate(model, tokenizer, text, model_type, print_result=False, max_length
             inputs['input_ids'] = inputs['input_ids'][0][:-1].unsqueeze(dim=0)
             inputs['attention_mask'] = inputs['attention_mask'][0][:-1].unsqueeze(dim=0)
             outputs = model.generate(**inputs, max_length=max_length, eos_token_id=46332)
+        elif model_type.startswith('madlad'):
+            inputs['input_ids'] = inputs['input_ids'][0][1:].unsqueeze(dim=0)
+            inputs['attention_mask'] = inputs['attention_mask'][0][1:].unsqueeze(dim=0)
+            outputs = model.generate(**inputs, max_length=max_length)
         elif 'mbart' in model_type or 'nllb' in model_type:
             outputs = model.generate(**inputs, max_length=max_length, forced_bos_token_id=tokenizer.lang_code_to_id[tokenizer.tgt_lang])
         else:
             outputs = model.generate(**inputs, max_length=max_length)
         
         input_len = len(inputs['input_ids'].squeeze()) if model_type.startswith('llama') else 0
-        
         translated_text = tokenizer.decode(outputs[0][input_len:], skip_special_tokens=True)
 
     translated_text = re.sub(r'\s+', ' ', translated_text)
     translated_text = translated_text.strip()
     
     if print_result:
-        print(translated_text)
+        print(f"[Input] {text}")
+        print(f"[Output] {translated_text}")
 
     return translated_text
 
@@ -258,7 +246,12 @@ def inference(model_type, source_column, target_column, file_path, print_result=
     if not model_type.endswith('vllm'):
         model.to(DEVICE)
 
-    max_length = 768 if 'llama' in model_type else 512
+    if 'llama' in model_type:
+        max_length = 768
+    elif 'madlad' in model_type or 'mt5' in model_type:
+        max_length = 384
+    else:
+        max_length = 512
 
     eval_df = pd.read_csv(file_path)
     tqdm.pandas(desc="Translating")
@@ -282,7 +275,7 @@ def inference_single(model_type, text):
     if not model_type.endswith('vllm'):
         model.to(DEVICE)
 
-    translation = translate(model, tokenizer, text, model_type, max_length=768)
+    translation = translate(model, tokenizer, text, model_type)
 
     return translation
 
@@ -330,14 +323,20 @@ if __name__ == '__main__':
         'llama': 'llama-aihub-qlora',
         'llama-bf16': 'llama-aihub-qlora-bf16',
         'llama-bf16-vllm': 'llama-aihub-qlora-bf16-vllm',
+        'madlad-qlora': 'madlad-aihub-7b-bt-qlora',
         'mt5-fft': 'mt5-aihub-base-fft'
     }
     
     model_type = model_type_dict[args.model_type]
     print(f"Inference model: {model_type.upper()}")
+    print(f"Inference type: {args.inference_type.upper()}")
+    if args.inference_type == 'dataset':
+        print(f"Dataset: {dataset.upper()}")
+    elif args.inference_type == 'sentence':
+        print(f"Sentence: {args.sentence}")
 
     if args.inference_type == 'dataset':
-        target_column = model_type + "-1shot_trans"
+        target_column = model_type + "_trans"
         inference(model_type, source_column, target_column, file_path, print_result=True)
     
     if args.inference_type == 'sentence':
