@@ -35,6 +35,8 @@ Notes:
     - The evaluation results are printed to the console.
 """
 # built-in
+import os
+os.environ['CUDA_VISIBLE_DEVICES'] = '3'
 import yaml
 
 # third-party
@@ -45,6 +47,7 @@ import pandas as pd
 from tqdm import tqdm
 from rouge import Rouge
 from transformers import AutoTokenizer
+from comet import download_model, load_from_checkpoint
 from nltk.translate.bleu_score import sentence_bleu, corpus_bleu
 
 
@@ -290,6 +293,31 @@ def calculate_bertscore(eval_df, column_name):
     return avg_bertscore * 100
 
 
+def calculate_sentence_xcomet(source, reference, candidate):
+    model_path = download_model("Unbabel/XCOMET-XL")
+    model = load_from_checkpoint(model_path)
+    triplets = [{"src": source, "mt": candidate, "ref": reference}]
+    model_output = model.predict(triplets, batch_size=1, gpus=1)
+    xcomet = model_output[0][0]
+    return xcomet * 100
+
+
+def calculate_xcomet(eval_df, column_name):
+    model_path = download_model("Unbabel/XCOMET-XL")
+    model = load_from_checkpoint(model_path)
+    triplets = []
+    for _, example in eval_df.iterrows():
+        src_text = example['en']
+        mt_text = example[column_name] if not pd.isna(example[column_name]) else ' '
+        ref_text = example['ko']
+
+        triplet = {"src": src_text, "mt": mt_text, "ref": ref_text}
+        triplets.append(triplet)
+    model_output = model.predict(triplets, batch_size=16, gpus=1)
+    xcomet = model_output[1]
+    return xcomet * 100
+
+
 def evaluate_all(eval_df, column_list=None, metric_list=None):
     """
     Evaluate the performance of translation models on multiple columns using multiple metrics.
@@ -327,6 +355,9 @@ def evaluate_all(eval_df, column_list=None, metric_list=None):
         if 'bertscore' in metric_list:
             mean_bertscore = calculate_bertscore(eval_df, col)
             col_dict['bertscore'] = mean_bertscore
+        if 'comet' in metric_list:
+            mean_comet = calculate_xcomet(eval_df, col)
+            col_dict['comet'] = mean_comet
 
         eval_dict[col] = col_dict
 
@@ -368,9 +399,9 @@ def print_evaluation_results(eval_dict):
             if isinstance(metric_value, dict):
                 print(f" - {str(metric_key).upper()}")
                 for metric, value in metric_value.items():
-                    print(f" - {metric}: {value:.2f}")
+                    print(f" - {metric}: {value}")
             else:
-                print(f" - {str(metric_key).upper()}: {metric_value:.2f}")
+                print(f" - {str(metric_key).upper()}: {metric_value}")
 
 
 def save_eval_results_as_yaml(eval_dict, save_path):
@@ -487,15 +518,20 @@ if __name__ == '__main__':
         'nllb-600m_trans', 
         'madlad_trans', 
         'mbart-aihub_trans', 
-        'llama-aihub-qlora_trans',
-        'llama-aihub-qlora-bf16_trans',
-        'llama-aihub-qlora-fp16_trans',
+        # 'llama-aihub-qlora_trans',
+        # 'llama-aihub-qlora-bf16_trans',
+        # 'llama-aihub-qlora-fp16_trans',
         'llama-aihub-qlora-bf16-vllm_trans',
-        'llama-aihub-qlora-augment_trans',
-        'llama-aihub-qlora-reverse-new_trans',
-        'llama-aihub-qlora-reverse-overlap_trans',
+        # 'llama-aihub-qlora-augment_trans',
+        # 'llama-aihub-qlora-reverse-new_trans',
+        # 'llama-aihub-qlora-reverse-overlap_trans',
+        'mt5-aihub-base-fft_trans'
     ]
-    metric_list = ['sacrebleu', 'bertscore']
+    metric_list = [
+        'sacrebleu', 
+        'bertscore', 
+        'comet'
+    ]
     source_list = [
         111, 
         124, 
