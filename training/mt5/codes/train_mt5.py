@@ -43,59 +43,60 @@ def set_src2tgt(example, idx, mode):
     return example
 
 
-def add_special_tokens_by_mode(tokenizer, mode, src_sign=None, tgt_sign=None):
-    src_sign, tgt_sign = src_sign, tgt_sign
-    
-    if mode.endswith('token'):
-        if 'separate' in mode:
-            src_sign, tgt_sign = '<en>', '<ko>'
-        elif 'first' in mode:
-            if mode.startswith('en2ko'):
-                src_sign, tgt_sign = '<en2ko>', None
-            elif mode.startswith('ko2en'):
-                src_sign, tgt_sign = '<ko2en>', None
-            elif mode.startswith('mixed'):
-                src_sign, tgt_sign = '<en2ko>', '<ko2en>'
-        elif 'second' in mode:
-            if mode.startswith('en2ko'):
-                src_sign, tgt_sign = None, '<en2ko>'
-            elif mode.startswith('ko2en'):
-                src_sign, tgt_sign = None, '<ko2en>'
-            elif mode.startswith('mixed'):
-                src_sign, tgt_sign = '<en2ko>', '<ko2en>'
+def src_and_tgt_by_mode(mode):
+    src_sign, tgt_sign = None, None
+    if 'separate' in mode:
+        src_sign, tgt_sign = '<en>', '<ko>'
+    elif 'first' in mode:
+        src_sign, tgt_sign = '<2ko>', None
+    elif 'second' in mode:
+        src_sign, tgt_sign = None, '<2ko>'
+    return src_sign, tgt_sign
 
+
+def change_sign(sign):
+    if sign is None:
+        return sign
+    if 'en' in sign:
+        sign = sign.replace('en', 'ko')
+    elif 'ko' in sign:
+        sign = sign.replace('ko', 'en')
+    return sign
+
+
+def add_special_token(tokenizer, sign):
+    tokenizer.add_special_tokens({'additional_special_tokens': [sign]})
+    print("Special token:", sign)
+    print("Special token id:", tokenizer(sign)['input_ids'][0])
+
+
+def add_special_tokens_by_mode(tokenizer, mode, src_sign=None, tgt_sign=None):
+    src_sign, tgt_sign = src_and_tgt_by_mode(mode)
     if src_sign is not None:
-        tokenizer.add_special_tokens({'additional_special_tokens': [src_sign]})
-        print("Source sign:", src_sign)
-        print("Source sign id:", tokenizer(src_sign)['input_ids'][0])
+        add_special_token(tokenizer, src_sign)
+        if mode.startswith('mixed'):
+            add_special_token(tokenizer, change_sign(src_sign))
     if tgt_sign is not None:
-        tokenizer.add_special_tokens({'additional_special_tokens': [tgt_sign]})
-        print("Target sign:", tgt_sign)
-        print("Target sign id:", tokenizer(tgt_sign)['input_ids'][0])
+        add_special_token(tokenizer, tgt_sign)
+        if mode.startswith('mixed'):
+            add_special_token(tokenizer, change_sign(tgt_sign))
 
 
 def preprocess_example(example, mode, max_length, tokenizer):
-    if example['src2tgt']:
-        src_col, tgt_col = 'en', 'ko'
-    else:
-        src_col, tgt_col = 'ko', 'en'
+    src_col, tgt_col = 'en', 'ko'
+    src_sign, tgt_sign = src_and_tgt_by_mode(mode)
+    if not example['src2tgt']:
+        src_col, tgt_col = tgt_col, src_col
+        src_sign, tgt_sign = change_sign(src_sign), change_sign(tgt_sign)
     
     if 'clean' in mode:
-        src_sign = None
-        tgt_sign = None
         src_text = example[src_col]
     elif 'separate' in mode:
-        src_sign = f'<{src_col}>'
-        tgt_sign = f'<{tgt_col}>'
-        src_text = ' '.join([src_sign, example[src_col], tgt_sign])
+        src_text = f"{src_sign} {example[src_col]} {tgt_sign}"
     elif 'first' in mode:
-        src_sign = f'<{src_col}2{tgt_col}>'
-        tgt_sign = None
-        src_text = ' '.join([src_sign, example[src_col]])
+        src_text = f"{src_sign} {example[src_col]}"
     elif 'second' in mode:
-        src_sign = None
-        tgt_sign = f'<{src_col}2{tgt_col}>'
-        src_text = ' '.join([example[src_col], tgt_sign])
+        src_text = f"{example[src_col]} {tgt_sign}"
 
     tgt_text = example[tgt_col]
 
@@ -130,7 +131,8 @@ def train(args):
 
     model, tokenizer = load_model_and_tokenizer(args.plm_name)
 
-    add_special_tokens_by_mode(tokenizer, args.translation_mode)
+    if args.translation_mode.endswith('token'):
+        add_special_tokens_by_mode(tokenizer, args.translation_mode)
 
     if args.gradient_checkpointing:
         model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": True})
@@ -138,7 +140,7 @@ def train(args):
     dataset = load_dataset(args.dataset_name)
     dataset = dataset.map(lambda example, idx: set_src2tgt(example, idx, args.translation_mode), with_indices=True)
     dataset = dataset.map(lambda example: preprocess_example(example, args.translation_mode, args.max_length, tokenizer))
-
+    
     metric = evaluate.load('sacrebleu')
 
     warmup_steps = calculate_warmup_steps(
@@ -157,7 +159,7 @@ def train(args):
         eval_steps = 1
         save_steps = 1
         train_dataset = dataset['train'].select(range(1000))
-        eval_dataset = dataset['validation'].select(range(10))
+        eval_dataset = dataset['validation']#.select(range(10))
     else:
         project_name = args.project_name
         output_dir = args.output_dir
@@ -218,28 +220,36 @@ def train(args):
 
     def compute_metrics(p):
         preds, labels, inputs = p.predictions[0], p.label_ids, p.inputs
+        for i in range(len(preds)):
+            try:
+                eos_idx = np.where(preds[i] == tokenizer.eos_token_id)[0][0]
+                preds[i][eos_idx:] = 1
+            except IndexError:
+                pass
 
         decoded_inputs = tokenizer.batch_decode(inputs, skip_special_tokens=True)
         decoded_labels = tokenizer.batch_decode(labels, skip_special_tokens=True)
         decoded_preds = tokenizer.batch_decode(preds, skip_special_tokens=True)
 
-        if args.translation_mode.startswith('mixed'):
-            if args.translation_mode.endswith('token'):
-                if 'separate' in args.translation_mode:
-                    signs = []
-                    for input, label in zip(inputs, labels):
-                        input_sign = tokenizer.convert_ids_to_tokens([input[0]])[0][1:-1]
-                        label_sign = tokenizer.convert_ids_to_tokens([label[0]])[0][1:-1]
-                        sign = f"{input_sign}2{label_sign}"
-                        signs.append(sign)
-                elif 'first' in args.translation_mode:
-                    signs = [tokenizer.convert_ids_to_tokens([input[0]])[0][1:-1] for input in inputs]
-                elif 'second' in args.translation_mode:
-                    signs = [tokenizer.convert_ids_to_tokens([label[0]])[0][1:-1] for label in labels]
-            else:
-                signs = [decoded_input.split(' ')[0][1:-1] for decoded_input in decoded_inputs]
-        else:
-            signs = [args.translation_mode.split('-')[0]] * len(decoded_labels)
+        # mixed인 경우 추가 수정 필요(sign 변경 이유)
+        # if args.translation_mode.startswith('mixed'):
+        #     if args.translation_mode.endswith('token'):
+        #         if 'separate' in args.translation_mode:
+        #             signs = []
+        #             for input, label in zip(inputs, labels):
+        #                 input_sign = tokenizer.convert_ids_to_tokens([input[0]])[0][1:-1]
+        #                 label_sign = tokenizer.convert_ids_to_tokens([label[0]])[0][1:-1]
+        #                 sign = f"{input_sign}2{label_sign}"
+        #                 signs.append(sign)
+        #         elif 'first' in args.translation_mode:
+        #             signs = [tokenizer.convert_ids_to_tokens([input[0]])[0][1:-1] for input in inputs]
+        #         elif 'second' in args.translation_mode:
+        #             signs = [tokenizer.convert_ids_to_tokens([label[0]])[0][1:-1] for label in labels]
+        #     else:
+        #         signs = [decoded_input.split(' ')[0][1:-1] for decoded_input in decoded_inputs]
+        # else:
+        #     signs = [args.translation_mode.split('-')[0]] * len(decoded_labels)
+        signs = [args.translation_mode.split('-')[0]] * len(decoded_labels)
 
         decodings = defaultdict(list)
         for sign, pred, label in zip(signs, decoded_preds, decoded_labels):

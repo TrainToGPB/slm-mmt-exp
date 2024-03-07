@@ -79,63 +79,58 @@ def set_src2tgt(example, idx, mode):
 
 def src_and_tgt_by_mode(mode):
     src_sign, tgt_sign = None, None
-
-    if mode.endswith('token'):
-        if 'separate' in mode:
-            src_sign, tgt_sign = '<en>', '<ko>'
-        elif 'first' in mode:
-            if mode.startswith('en2ko'):
-                src_sign, tgt_sign = '<en2ko>', None
-            elif mode.startswith('ko2en'):
-                src_sign, tgt_sign = '<ko2en>', None
-            elif mode.startswith('mixed'):
-                src_sign, tgt_sign = '<en2ko>', '<ko2en>'
-        elif 'second' in mode:
-            if mode.startswith('en2ko'):
-                src_sign, tgt_sign = None, '<en2ko>'
-            elif mode.startswith('ko2en'):
-                src_sign, tgt_sign = None, '<ko2en>'
-            elif mode.startswith('mixed'):
-                src_sign, tgt_sign = '<en2ko>', '<ko2en>'
-
+    if 'separate' in mode:
+        src_sign, tgt_sign = '<en>', '<ko>'
+    elif 'first' in mode:
+        src_sign, tgt_sign = '<2ko>', None
+    elif 'second' in mode:
+        src_sign, tgt_sign = None, '<2ko>'
     return src_sign, tgt_sign
 
 
-def add_special_tokens_by_mode(tokenizer, mode):
-    src_sign, tgt_sign = src_and_tgt_by_mode(mode)
+def change_sign(sign):
+    if sign is None:
+        return sign
+    if 'en' in sign:
+        sign = sign.replace('en', 'ko')
+    elif 'ko' in sign:
+        sign = sign.replace('ko', 'en')
+    return sign
 
+
+def add_special_token(tokenizer, sign):
+    tokenizer.add_special_tokens({'additional_special_tokens': [sign]})
+    print("Special token:", sign)
+    print("Special token id:", tokenizer(sign)['input_ids'][0])
+
+
+def add_special_tokens_by_mode(tokenizer, mode, src_sign=None, tgt_sign=None):
+    src_sign, tgt_sign = src_and_tgt_by_mode(mode)
     if src_sign is not None:
-        tokenizer.add_special_tokens({'additional_special_tokens': [src_sign]})
-        print("Source sign:", src_sign)
-        print("Source sign id:", tokenizer(src_sign)['input_ids'][0])
+        add_special_token(tokenizer, src_sign)
+        if mode.startswith('mixed'):
+            add_special_token(tokenizer, change_sign(src_sign))
     if tgt_sign is not None:
-        tokenizer.add_special_tokens({'additional_special_tokens': [tgt_sign]})
-        print("Target sign:", tgt_sign)
-        print("Target sign id:", tokenizer(tgt_sign)['input_ids'][0])
+        add_special_token(tokenizer, tgt_sign)
+        if mode.startswith('mixed'):
+            add_special_token(tokenizer, change_sign(tgt_sign))
 
 
 def preprocess_example(example, mode, max_length, tokenizer):
-    if example['src2tgt']:
-        src_col, tgt_col = 'en', 'ko'
-    else:
-        src_col, tgt_col = 'ko', 'en'
+    src_col, tgt_col = 'en', 'ko'
+    src_sign, tgt_sign = src_and_tgt_by_mode(mode)
+    if not example['src2tgt']:
+        src_col, tgt_col = tgt_col, src_col
+        src_sign, tgt_sign = change_sign(src_sign), change_sign(tgt_sign)
     
     if 'clean' in mode:
-        src_sign = None
-        tgt_sign = None
         src_text = example[src_col]
     elif 'separate' in mode:
-        src_sign = f'<{src_col}>'
-        tgt_sign = f'<{tgt_col}>'
-        src_text = ' '.join([src_sign, example[src_col], tgt_sign])
+        src_text = f"{src_sign} {example[src_col]} {tgt_sign}"
     elif 'first' in mode:
-        src_sign = f'<{src_col}2{tgt_col}>'
-        tgt_sign = None
-        src_text = ' '.join([src_sign, example[src_col]])
+        src_text = f"{src_sign} {example[src_col]}"
     elif 'second' in mode:
-        src_sign = None
-        tgt_sign = f'<{src_col}2{tgt_col}>'
-        src_text = ' '.join([example[src_col], tgt_sign])
+        src_text = f"{example[src_col]} {tgt_sign}"
 
     tgt_text = example[tgt_col]
 
