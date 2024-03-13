@@ -48,8 +48,9 @@ from tqdm import tqdm
 # third-party
 import torch
 import pandas as pd
-from peft import PeftModel
+from peft import PeftModel, LoraConfig, LoraModel
 from vllm import LLM, SamplingParams
+from transformers import AutoModelForCausalLM, AutoTokenizer
 from transformers import LlamaForCausalLM, LlamaTokenizer
 from transformers import MarianMTModel, MarianTokenizer
 from transformers import MBartForConditionalGeneration, MBart50Tokenizer
@@ -98,6 +99,9 @@ def load_model_and_tokenizer(model_type):
         'llama-aihub-qlora-reverse-overlap': (('beomi/open-llama-2-ko-7b', os.path.join(SCRIPT_DIR, '../../training/llama_qlora/models/continuous-reverse-overlap')), LlamaForCausalLM, LlamaTokenizer),
         'madlad-aihub-7b-bt-qlora': (('google/madlad400-7b-mt-bt', os.path.join(SCRIPT_DIR, '../../training/madlad/models/7b-bt-en2ko')), T5ForConditionalGeneration, T5Tokenizer),
         'mt5-aihub-base-fft': (os.path.join(SCRIPT_DIR, '../../training/mt5/models/base-fft-en2ko-separate-token-constlr-70epoch'), MT5ForConditionalGeneration, T5Tokenizer),
+        # alma-qlora-dpo 모델 정상 사용 불가: lora_A 가중치 비어있음
+        'alma-qlora-dpo-policy': (('haoranxu/ALMA-7B-Pretrain', os.path.join(SCRIPT_DIR, '../../training/llama_qlora/models/alma-dpo/policy')), LlamaForCausalLM, LlamaTokenizer),
+        'alma-qlora-dpo-reference': (('haoranxu/ALMA-7B-Pretrain', os.path.join(SCRIPT_DIR, '../../training/llama_qlora/models/alma-dpo/reference')), LlamaForCausalLM, LlamaTokenizer),
     }
     assert model_type in model_mapping.keys(), 'Wrong model type'
 
@@ -126,21 +130,22 @@ def load_model_and_tokenizer(model_type):
             torch_dtype = torch.bfloat16
             model = model_cls.from_pretrained(
                 model_name, 
+                max_length=768 if model_type.startswith('llama') else 512,
                 quantization_config=bnb_config, 
+                attn_implementation='flash_attention_2' if model_type.startswith('alma') else None,
                 torch_dtype=torch_dtype
             )
+            
             model = PeftModel.from_pretrained(
                 model, 
                 adapter_path, 
-                torch_dtype=torch_dtype
+                # torch_dtype=torch_dtype,
+                adapter_name=model_type.split('-')[-1]
             )
-            tokenizer = tokenizer_cls.from_pretrained(model_name)
-
-    # opus, mbart, nllb-600m, nllb-1.3b, madlad, mbart-aihub, llama
     else:
         model = model_cls.from_pretrained(model_name)
-        tokenizer = tokenizer_cls.from_pretrained(model_name)
 
+    tokenizer = tokenizer_cls.from_pretrained(model_name)
     if model_type.startswith('llama'):
         tokenizer.pad_token = "</s>"
         tokenizer.pad_token_id = 2
@@ -149,6 +154,11 @@ def load_model_and_tokenizer(model_type):
         tokenizer.add_eos_token = True
         tokenizer.padding_side = 'right'
         tokenizer.model_max_length = 768
+    elif model_type.startswith('alma'):
+        tokenizer.eos_token = "</s>"
+        tokenizer.eos_token_id = 2
+        tokenizer.add_eos_token = True
+        tokenizer.model_max_length = 512
 
     return model, tokenizer
 
@@ -177,6 +187,8 @@ def translate(model, tokenizer, text, model_type, print_result=False, max_length
         text = f"### English: {text}\n### 한국어: "
     elif model_type.startswith('mt5'):
         text = f"<en> {text} <ko>"
+    elif model_type.startswith('alma'):
+        text = f"Translate this from English to Russian:\nEnglish: {text}\nRussian: "
 
     if 'mbart' in model_type:
         src_lang = 'en_XX'
@@ -204,7 +216,7 @@ def translate(model, tokenizer, text, model_type, print_result=False, max_length
         outputs = model.generate([text], sampling_params, use_tqdm=False)
         translated_text = outputs[0].outputs[0].text
     else:
-        if model_type.startswith('llama-aihub-qlora'):
+        if model_type.startswith('llama-aihub-qlora') or model_type.startswith('alma'):
             inputs['input_ids'] = inputs['input_ids'][0][:-1].unsqueeze(dim=0)
             inputs['attention_mask'] = inputs['attention_mask'][0][:-1].unsqueeze(dim=0)
             outputs = model.generate(**inputs, max_length=max_length, eos_token_id=46332)
@@ -217,7 +229,7 @@ def translate(model, tokenizer, text, model_type, print_result=False, max_length
         else:
             outputs = model.generate(**inputs, max_length=max_length)
         
-        input_len = len(inputs['input_ids'].squeeze()) if model_type.startswith('llama') else 0
+        input_len = len(inputs['input_ids'].squeeze()) if model_type.startswith('llama') or model_type.startswith('alma') else 0
         translated_text = tokenizer.decode(outputs[0][input_len:], skip_special_tokens=True)
 
     translated_text = re.sub(r'\s+', ' ', translated_text)
@@ -324,7 +336,9 @@ if __name__ == '__main__':
         'llama-bf16': 'llama-aihub-qlora-bf16',
         'llama-bf16-vllm': 'llama-aihub-qlora-bf16-vllm',
         'madlad-qlora': 'madlad-aihub-7b-bt-qlora',
-        'mt5-fft': 'mt5-aihub-base-fft'
+        'mt5-fft': 'mt5-aihub-base-fft',
+        'alma-pol': 'alma-qlora-dpo-policy',
+        'alma-ref': 'alma-qlora-dpo-reference'
     }
     
     model_type = model_type_dict[args.model_type]
