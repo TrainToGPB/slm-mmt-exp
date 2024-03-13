@@ -206,3 +206,6 @@ wandb/
 
 # cpo
 cpo/
+
+# deepspeed
+*.deepspeed_env
