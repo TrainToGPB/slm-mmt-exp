@@ -102,10 +102,10 @@ def get_chosen_rejected(example, tgt_lang, cpo_scorer):
     score_argmax = scores.index(max(scores))
     score_argmin = scores.index(min(scores))
 
-    best_sentence = sentences[score_argmax]
-    worst_sentence = sentences[score_argmin]
+    chosen = sentences[score_argmax]
+    rejected = sentences[score_argmin]
 
-    return best_sentence, worst_sentence
+    return chosen, rejected
 
 
 def meet_requirements(prompt_tokens, example, tgt_lang, max_src_length):
