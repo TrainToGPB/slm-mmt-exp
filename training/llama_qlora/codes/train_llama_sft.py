@@ -9,7 +9,8 @@ The following functions are available:
 - train: Train the model
 
 Example:
-    $ python train_llama_sft.py 
+    $ Single GPU: python train_llama_sft.py 
+    $ Multi GPU (DDP): accelerate launch --main_process_port 50001 --config_file ../configs/deepspeed_train_config_bf16.yaml train_llama_sft.py
 
 Notes:
 - The training arguments are in the llama_config.yaml file
@@ -17,17 +18,19 @@ Notes:
 # built-in
 import os
 import sys
-os.environ['CUDA_VISIBLE_DEVICES'] = '2,3'
+os.environ['CUDA_VISIBLE_DEVICES'] = '0,1,2,3'
 os.environ['TOKENIZERS_PARALLELISM'] = 'false'
+from collections import defaultdict
 
 # third-party
 import torch
 import wandb
 import evaluate
+import bert_score
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
-from datasets import Dataset
+from datasets import Dataset, DatasetDict
 from datasets import load_dataset
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from peft import LoraConfig
@@ -35,14 +38,21 @@ from peft import get_peft_model, prepare_model_for_kbit_training
 from trl import SFTTrainer
 from transformers import TrainingArguments
 from transformers import BitsAndBytesConfig
+from accelerate import Accelerator
 
 # custom
 sys.path.append('../../')
 from training_utils import set_seed
-from argument import parse_arguments_llama
+from argument import load_yaml_config, parse_arguments_llama
 from data_collator import CustomDataCollatorForCompletionOnlyLM
 sys.path.append('../../../../') # Use your own path
 from custom_utils.general_secret import WANDB_CLIENT_KEY # Use your own path
+
+
+LANG_TABLE = {
+    "en": "English",
+    "ko": "한국어"
+}
 
 
 def load_model_and_tokenizer(plm_name, device_map, max_length, use_gradient_checkpointing, bnb_config, lora_config):
@@ -65,6 +75,7 @@ def load_model_and_tokenizer(plm_name, device_map, max_length, use_gradient_chec
         plm_name,
         quantization_config=bnb_config,
         torch_dtype=bnb_config.bnb_4bit_compute_dtype,
+        attn_implementation='flash_attention_2',
         device_map=device_map
     )
     model.config.use_cache = False
@@ -80,6 +91,11 @@ def load_model_and_tokenizer(plm_name, device_map, max_length, use_gradient_chec
     tokenizer.add_eos_token = True
     tokenizer.padding_side = 'right'
     tokenizer.model_max_length = max_length
+
+    src_token, tgt_token = "<|src|>", "<|tgt|>"
+    tokenizer.add_tokens([src_token, tgt_token])
+    print(f"Added tokens: {src_token}, {tgt_token}")
+    print(f"Added token ids: {tokenizer.convert_tokens_to_ids([src_token, tgt_token])}")
 
     if hasattr(model, "enable_input_require_grads"):
         model.enable_input_require_grads()
@@ -120,24 +136,7 @@ def calculate_warmup_steps(epochs, dataset_size, batch_size, gradient_accumulati
     return warmup_steps
 
 
-def postprocess_text(preds, labels):
-    """
-    Postprocess the text
-
-    Args:
-    - preds (list): The predictions
-    - labels (list): The labels
-
-    Returns:
-    - preds (list): The postprocessed predictions
-    - labels (list): The postprocessed labels
-    """
-    preds = [pred.strip() for pred in preds]
-    labels = [[label.strip()] for label in labels]
-    return preds, labels
-
-
-def drop_long_texts(dataset, tokenizer, max_length=768, len_threshold=700):
+def drop_long_texts(dataset, tokenizer, max_length=512):
     """
     Drop long texts from the dataset
 
@@ -153,28 +152,62 @@ def drop_long_texts(dataset, tokenizer, max_length=768, len_threshold=700):
     df = pd.DataFrame(dataset)
 
     rows_to_drop = []
-    for idx, row in tqdm(df.iterrows(), total=len(df)):
-        text = f"### English: {row['en']}\n### 한국어: {row['ko']}"
+    tqdm_iterator = tqdm(df.iterrows(), total=len(df), desc="Dropping long texts")
+    for idx, row in tqdm_iterator:
+        src, tgt = row['direction'].split('-')[0], row['direction'].split('-')[1]
+        prompt = f"Translate this from {src} to {tgt}."
+        suffix_src = f"### {src}:"
+        suffix_tgt = f"### {tgt}:"
+        text = f"{prompt}\n{suffix_src}\n{row['src']}\n{suffix_tgt} {row['tgt']}"
         outputs = tokenizer.encode_plus(
             text,
             padding=False,
             truncation=True,
-            max_length=max_length,
+            max_length=max_length+1,
             return_tensors='pt',
             return_attention_mask=False,
             return_length=False
         )
         
         input_len = len(outputs.input_ids.squeeze())
-        if input_len > len_threshold:
+        if input_len > max_length:
             rows_to_drop.append(idx)
     
     df_dropped = df.drop(rows_to_drop)
     dataset_dropped = Dataset.from_pandas(df_dropped)
 
-    print(f"Dropped (over {len_threshold}): {len(rows_to_drop)}")
+    print(f"Dropped (over {max_length}): {len(rows_to_drop)}")
 
     return dataset_dropped
+
+
+def map_bidirectional(dataset):
+    mapped_dataset = {}
+    for split in dataset.keys():
+        split_dataset = defaultdict(list)
+        tqdm_iterator = tqdm(
+            zip(dataset[split]['ko_ref'], dataset[split]['en_ref']),
+            total=len(dataset[split]['ko_ref']), 
+            desc=f"Mapping {split} split"
+        )
+        for ko, en in tqdm_iterator:
+            split_dataset['src'].extend([ko, en])
+            split_dataset['tgt'].extend([en, ko])
+            split_dataset['direction'].extend(['ko-en', 'en-ko'])
+            
+        mapped_dataset[split] = Dataset.from_dict(split_dataset)
+    
+    mapped_dataset = DatasetDict(mapped_dataset)
+
+    return mapped_dataset
+
+
+def add_special_lang_tokens(tokenizer):
+    for lang_key in LANG_TABLE.keys():
+        lang_token = f'<|{lang_key}|>'
+        tokenizer.add_special_tokens({"additional_special_tokens": [lang_token]})
+        print(f"Added special lang token: {lang_token}")
+        print(f"Added special lang token id: {tokenizer.convert_tokens_to_ids(lang_token)}")
 
 
 def train(args):
@@ -204,18 +237,20 @@ def train(args):
         task_type='CAUSAL_LM'
     )
 
+    device_index = Accelerator().process_index
+    device_map = {"": device_index}
+
     model, tokenizer = load_model_and_tokenizer(
         plm_name=args.plm_name, 
-        # device_map=args.device_map, 
-        device_map=torch.cuda.current_device(),
+        device_map=device_map, 
         max_length=args.max_length, 
         use_gradient_checkpointing=args.gradient_checkpointing,
         bnb_config=bnb_config, 
         lora_config=lora_config
     )
-    dataset = load_dataset(args.dataset_name)
 
-    metric = evaluate.load('sacrebleu')
+    dataset = load_dataset(args.dataset_name)
+    dataset = map_bidirectional(dataset)
 
     dataset_size = len(dataset['train'])
     warmup_steps = calculate_warmup_steps(
@@ -237,7 +272,7 @@ def train(args):
     else:
         project_name = args.project_name
         output_dir = args.output_dir
-        logging_steps = args.logging_steps
+        logging_steps = min(25, warmup_steps // 10)
         eval_steps = warmup_steps
         save_steps = warmup_steps
         train_dataset = drop_long_texts(dataset['train'], tokenizer)
@@ -255,7 +290,7 @@ def train(args):
         output_dir=output_dir,
         dataloader_num_workers=args.dataloader_num_workers,
         per_device_train_batch_size=args.per_device_batch_size,
-        per_device_eval_batch_size=args.per_device_batch_size,
+        per_device_eval_batch_size=args.per_device_batch_size // 2, # bertscore 계산 시 메모리 부족 방지
         num_train_epochs=args.num_epochs,
         learning_rate=args.learning_rate,
         warmup_steps=warmup_steps, # 전체 step의 10%
@@ -279,32 +314,31 @@ def train(args):
         report_to=args.report_to,
         load_best_model_at_end=args.load_best_model_at_end,
         metric_for_best_model=args.metric_for_best_model,
+        include_inputs_for_metrics=True,
     )
 
     data_collator=CustomDataCollatorForCompletionOnlyLM(
-        # instruction_template='\n'.join([args.instruction, args.en_sign]),
-        instruction_template=args.en_sign,
-        response_template=args.ko_sign,
+        instruction_template=f"{args.instruction}\n{args.suffix_src}",
+        response_template=f"\n{args.suffix_tgt}",
         tokenizer=tokenizer, 
+        lang_table=LANG_TABLE,
         mlm=False
     )
 
     
     def formatting_func(example):
         output_texts = []
-        for i in range(len(example['en'])):
-            # text = f"{args.instruction}\n{args.en_sign} {example['en'][i]}\n{args.ko_sign} {example['ko'][i]}" # w/ instruction
-            text = f"{args.en_sign} {example['en'][i]}\n{args.ko_sign} {example['ko'][i]}" # w/o instruction
+        for src_text, tgt_text, direction in zip(example['src'], example['tgt'], example['direction']):
+            src, tgt = direction.split('-')[0], direction.split('-')[1]
+            text = f"Translate this from {LANG_TABLE[src]} to {LANG_TABLE[tgt]}.\n### {LANG_TABLE[src]}: {src_text}\n### {LANG_TABLE[tgt]}: {tgt_text}"
             output_texts.append(text)
         return output_texts
-
 
     def preprocess_logits_for_metrics(logits, labels):
         pred_ids = torch.argmax(logits, dim=-1)
         return pred_ids, labels
 
-
-    def compute_sacrebleu(p):
+    def compute_metrics(p):
         """
         Compute the SacreBLEU score
 
@@ -314,9 +348,38 @@ def train(args):
         Returns:
         - result (dict): The result
         """
+        def find_start_idx_window(long_array, short_array):
+            for i in range(len(long_array) - len(short_array) + 1):
+                if np.array_equal(long_array[i:i+len(short_array)], short_array):
+                    return i
+            return -1
+
+        def clean_key(key):
+            return key.split('_')[1]
+
+        def metrics_result_key(prefix, key):
+            return f"{prefix}_{clean_key(key)}"
+
+        def compute_sacrebleu(decodings, key):
+            metric = evaluate.load('sacrebleu')
+            return metric.compute(
+                predictions=decodings[f'pred_{clean_key(key)}'], 
+                references=decodings[f'label_{clean_key(key)}']
+            )['score']
+        
+        # 
+        def compute_bertscore(decodings, key):
+            lang = clean_key(key).split('2')[1]
+            return bert_score.score(
+                cands=decodings[f'pred_{clean_key(key)}'], 
+                refs=decodings[f'label_{clean_key(key)}'], 
+                lang=lang,
+                batch_size=4
+            )[2].mean().item() * 100
+        
         IGNORE_INDEX = -100
 
-        preds, labels = p.predictions[0], p.label_ids
+        preds, labels, inputs = p.predictions[0], p.label_ids, p.inputs
 
         first_non_ignore_indices = np.argmax(labels != IGNORE_INDEX, axis=1)
         for i, idx in enumerate(first_non_ignore_indices):
@@ -326,18 +389,46 @@ def train(args):
 
         decoded_labels = tokenizer.batch_decode(labels, skip_special_tokens=True)
         decoded_preds = tokenizer.batch_decode(preds, skip_special_tokens=True)
-        decoded_preds, decoded_labels = postprocess_text(decoded_preds, decoded_labels)
 
-        for decoded_label, decoded_pred in zip(decoded_labels[:10], decoded_preds[:10]):
+        signs = []
+        for input_id in inputs:
+            lang_start_idxs = {}
+            for lang in LANG_TABLE.keys():
+                lang_encoding = np.array(tokenizer.encode(LANG_TABLE[lang], add_special_tokens=False))
+                lang_idx = find_start_idx_window(input_id, lang_encoding)
+                lang_start_idxs[lang] = lang_idx
+                if len(lang_start_idxs.keys()) == 2:
+                    lang1, lang2 = list(lang_start_idxs.keys())
+                    sign = f"{lang1}2{lang2}" if lang_start_idxs[lang1] < lang_start_idxs[lang2] else f"{lang2}2{lang1}"
+                    signs.append(sign)
+                    break
+
+        decodings = defaultdict(list)
+        for sign, pred, label in zip(signs, decoded_preds, decoded_labels):
+            pred_col, label_col = '_'.join(['pred', sign]), '_'.join(['label', sign])
+            decodings[pred_col].append(pred)
+            decodings[label_col].append(label)
+
+        random_indices = np.random.choice(len(decoded_labels), 10, replace=False)
+        random_decoded_labels = np.array(decoded_labels)[random_indices]
+        random_decoded_preds = np.array(decoded_preds)[random_indices]
+
+        for decoded_label, decoded_pred in zip(random_decoded_labels, random_decoded_preds):
             print("[LABEL]")
-            print(decoded_label[0])
+            print(decoded_label)
             print("[PREDICTION]")
             print(decoded_pred)
 
-        result = metric.compute(references=decoded_labels, predictions=decoded_preds)
-        result = {"SacreBLEU": result["score"]}
-        result = {k: round(v, 4) for k, v in result.items()}
-
+        sacrebleu_scores = {
+            metrics_result_key('sacrebleu', key): compute_sacrebleu(decodings, key) for key in decodings.keys() if 'pred' in key
+        }
+        bertscore_scores = {
+            metrics_result_key('bertscore', key): compute_bertscore(decodings, key) for key in decodings.keys() if 'pred' in key
+        }
+        result = {
+            **sacrebleu_scores,
+            **bertscore_scores
+        }
         return result
 
     trainer = SFTTrainer(
@@ -349,16 +440,23 @@ def train(args):
         data_collator=data_collator,
         formatting_func=formatting_func,
         preprocess_logits_for_metrics=preprocess_logits_for_metrics,
-        compute_metrics=compute_sacrebleu,
+        compute_metrics=compute_metrics,
         max_seq_length=args.max_length,
         packing=False
     )
-            
     trainer.train()
     trainer.save_model(args.output_dir)
 
 
 if __name__ == '__main__':
-    yaml_path = './llama_config.yaml'
+    yaml_path = '../configs/llama_config.yaml'
     args = parse_arguments_llama(yaml_path)
+    acc_yaml_path = '../configs/deepspeed_train_config_bf16.yaml'
+    acc_config = load_yaml_config(acc_yaml_path)
+
+    args.per_device_batch_size = acc_config['deepspeed_config']['train_micro_batch_size_per_gpu']
+    args.gradient_accumulation_steps = acc_config['deepspeed_config']['gradient_accumulation_steps']
+    args.max_grad_norm = acc_config['deepspeed_config']['gradient_clipping']
+    args.dataloader_num_workers = acc_config['num_processes']
+
     train(args)

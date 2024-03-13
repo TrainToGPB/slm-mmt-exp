@@ -9,6 +9,7 @@ import warnings
 from typing import Any, Dict, List, Union
 
 # third-party
+import torch
 import numpy as np
 from transformers import DataCollatorForLanguageModeling
 
@@ -36,6 +37,7 @@ class CustomDataCollatorForCompletionOnlyLM(DataCollatorForLanguageModeling):
         self,
         response_template: Union[str, List[int]],
         instruction_template: Union[str, List[int]] = None,
+        lang_table: Dict[str, str] = None,
         *args,
         mlm: bool = False,
         ignore_index: int = -100,
@@ -55,6 +57,8 @@ class CustomDataCollatorForCompletionOnlyLM(DataCollatorForLanguageModeling):
         if isinstance(response_template, str):
             # The user provides a string, must tokenize
             self.response_token_ids = self.tokenizer.encode(self.response_template, add_special_tokens=False)
+            if self.response_token_ids[0] == 29871:
+                self.response_token_ids = self.response_token_ids[1:]
         else:
             # The user already provides the token ids
             self.response_token_ids = response_template
@@ -68,6 +72,7 @@ class CustomDataCollatorForCompletionOnlyLM(DataCollatorForLanguageModeling):
             )
 
         self.ignore_index = ignore_index
+        self.lang_table = lang_table
 
     def torch_call(self, examples: List[Union[List[int], Any, Dict[str, Any]]]) -> Dict[str, Any]:
         batch = super().torch_call(examples)
@@ -75,21 +80,6 @@ class CustomDataCollatorForCompletionOnlyLM(DataCollatorForLanguageModeling):
         if self.instruction_template is None:
             for i in range(len(examples)):
                 response_token_ids_start_idx = None
-                ################################### SEHYEONG EDITED ####################################
-                """
-                (1) template이 "###"으로 시작하는 경우, 가끔 개행('\n')과 "###"이 만났을 때 token id가 바뀌는 경우가 있음
-                >>> ###: 835
-                >>> \n### -> _# + ##: 2277 + 29937
-
-                (2) template이 " ###"으로 시작하는 경우, token_ids는 공백('_')의 id로 시작하나 실제 토큰 시퀀스는 그렇지 않은 경우가 있음
-                >>> _###: 29871 + 835
-                >>> \n_### -> ###: 835
-                """
-                if self.response_token_ids[0] == 835:
-                    self.response_token_ids = [2277, 29937] + self.response_token_ids[1:]
-                elif self.response_token_ids[0] == 29871:
-                    self.response_token_ids = self.response_token_ids[1:]
-                ########################################################################################
                 for idx in np.where(batch["labels"][i] == self.response_token_ids[0])[0]:
                     # `response_token_ids` is `'### Response:\n'`, here we are just making sure that the token IDs match
                     if (
@@ -115,56 +105,88 @@ class CustomDataCollatorForCompletionOnlyLM(DataCollatorForLanguageModeling):
 
         else:
             for i in range(len(examples)):
+                lang_start_idx = {}
+                for lang in self.lang_table.values():
+                    lang_token_ids = self.tokenizer.encode(lang, add_special_tokens=False)
+                    lang_indices = np.where(batch["labels"][i] == lang_token_ids[0])[0]
+                    if lang_indices is not None:
+                        lang_start_idx[lang] = lang_indices[0]
+                    if len(lang_start_idx.keys()) == 2:
+                        break
+
+                lang1, lang2 = lang_start_idx.keys()
+                if lang_start_idx[lang1] < lang_start_idx[lang2]:
+                    src_lang, tgt_lang = lang1, lang2
+                else:
+                    src_lang, tgt_lang = lang2, lang1
+
+                src_token_ids = self.tokenizer.encode(src_lang, add_special_tokens=False)
+                tgt_token_ids = self.tokenizer.encode(tgt_lang, add_special_tokens=False)
+
+                src_special_token_id = self.tokenizer.convert_tokens_to_ids(["<|src|>"])[0]
+                tgt_special_token_id = self.tokenizer.convert_tokens_to_ids(["<|tgt|>"])[0]
+
+                response_token_ids_with_tgt = self.response_token_ids
+                added_len = 0
+                for idx in np.where(np.array(response_token_ids_with_tgt) == tgt_special_token_id)[0]:
+                    response_token_ids_with_tgt = response_token_ids_with_tgt[:idx+added_len] + tgt_token_ids + response_token_ids_with_tgt[idx+1+added_len:]
+                    added_len += len(tgt_token_ids) - 1
+                self.response_template = self.tokenizer.decode(response_token_ids_with_tgt, skip_special_tokens=True)
+
+                instruction_token_ids_with_src_tgt = self.instruction_token_ids
+                added_len = 0
+                for idx in np.where(np.array(instruction_token_ids_with_src_tgt) == src_special_token_id)[0]:
+                    instruction_token_ids_with_src_tgt = instruction_token_ids_with_src_tgt[:idx+added_len] + src_token_ids + instruction_token_ids_with_src_tgt[idx+1+added_len:]
+                    added_len += len(src_token_ids) - 1
+                added_len = 0
+                for idx in np.where(np.array(instruction_token_ids_with_src_tgt) == tgt_special_token_id)[0]:
+                    instruction_token_ids_with_src_tgt = instruction_token_ids_with_src_tgt[:idx+added_len] + tgt_token_ids + instruction_token_ids_with_src_tgt[idx+1+added_len:]
+                    added_len += len(tgt_token_ids) - 1
+                self.instruction_template = self.tokenizer.decode(instruction_token_ids_with_src_tgt, skip_special_tokens=True)
+
                 response_token_ids_idxs = []
                 human_token_ids_idxs = []
-                ################################### SEHYEONG EDITED ####################################
-                """
-                (1) template이 "###"으로 시작하는 경우, 가끔 개행('\n')과 "###"이 만났을 때 token id가 바뀌는 경우가 있음
-                >>> ###: 835
-                >>> \n### -> _# + ##: 2277 + 29937
-
-                (2) template이 " ###"으로 시작하는 경우, token_ids는 공백('_')의 id로 시작하나 실제 토큰 시퀀스는 그렇지 않은 경우가 있음
-                >>> _###: 29871 + 835
-                >>> \n_### -> ###: 835
-                """
-                if self.response_token_ids[0] == 835:
-                    self.response_token_ids = [2277, 29937] + self.response_token_ids[1:]
-                elif self.response_token_ids[0] == 29871:
-                    self.response_token_ids = self.response_token_ids[1:]
-                ########################################################################################
-                for assistant_idx in np.where(batch["labels"][i] == self.response_token_ids[0])[0]:
+                for assistant_idx in np.where(batch["labels"][i] == response_token_ids_with_tgt[0])[0]:
                     # find the indexes of the start of a response.
                     if (
-                        self.response_token_ids
-                        == batch["labels"][i][assistant_idx : assistant_idx + len(self.response_token_ids)].tolist()
+                        response_token_ids_with_tgt
+                        == batch["labels"][i][assistant_idx : assistant_idx + len(response_token_ids_with_tgt)].tolist()
                     ):
-                        response_token_ids_idxs.append(assistant_idx + len(self.response_token_ids))
-
+                        response_token_ids_idxs.append(assistant_idx + len(response_token_ids_with_tgt))
+                
                 if len(response_token_ids_idxs) == 0:
-                    print(batch["labels"][i])
-                    print(self.response_token_ids)
+                    start_idx = np.where(batch["labels"][i] == response_token_ids_with_tgt[0])[0][0]
                     warnings.warn(
-                        f"Could not find response key `{self.response_template}` in the "
-                        f'following instance: {self.tokenizer.decode(batch["input_ids"][i], skip_special_tokens=True)} '
+                        f"\nSOURCE: {src_lang} / TARGET: {tgt_lang}\n"
+                        f"RESPONSE: {self.response_template}\n"
+                        f"RESPONSE IDS: {self.response_token_ids}\n"
+                        f"LABEL: {self.tokenizer.decode(batch['input_ids'][i][start_idx:start_idx+len(self.response_token_ids)+1], skip_special_tokens=True)}\n"
+                        f"LABEL IDS: {batch['labels'][i][start_idx:start_idx+len(self.response_token_ids)+1]}\n"
+                        f"Could not find response key\n`{self.response_template}`\nin the "
+                        f'following instance:\n{self.tokenizer.decode(batch["input_ids"][i], skip_special_tokens=True)}\n'
                         f"This instance will be ignored in loss calculation. "
-                        f"Note, if this happens often, consider increasing the `max_seq_length`."
+                        f"Note, if this happens often, consider increasing the `max_seq_length`.\n\n"
                     )
                     batch["labels"][i, :] = self.ignore_index
 
-                human_token_ids = self.instruction_token_ids
+                human_token_ids = instruction_token_ids_with_src_tgt
                 for human_idx in np.where(batch["labels"][i] == human_token_ids[0])[0]:
                     # find the indexes of the start of a human answer.
                     if human_token_ids == batch["labels"][i][human_idx : human_idx + len(human_token_ids)].tolist():
                         human_token_ids_idxs.append(human_idx)
 
                 if len(human_token_ids_idxs) == 0:
-                    print(batch["labels"][i])
-                    print(self.instruction_token_ids)
+                    start_idx = 1
                     warnings.warn(
-                        f"Could not find instruction key `{self.instruction_template}` in the "
-                        f'following instance: {self.tokenizer.decode(batch["input_ids"][i], skip_special_tokens=True)} '
+                        f"SOURCE: {src_lang} / TARGET: {tgt_lang}\n"
+                        f"INSTRUCTION: {self.instruction_template}\n"
+                        f"INSTRUCTION IDS: {human_token_ids}\n"
+                        f"LABEL: {self.tokenizer.decode(batch['input_ids'][i][start_idx:start_idx+len(human_token_ids)+1], skip_special_tokens=True)}\n"
+                        f"LABEL IDS: {batch['labels'][i][start_idx:start_idx+len(human_token_ids)+1]}\n"
+                        f"Could not find instruction key\n`{self.instruction_template}`\nin the "
+                        f'following instance:\n{self.tokenizer.decode(batch["input_ids"][i], skip_special_tokens=True)}\n'
                         f"This instance will be ignored in loss calculation. "
-                        f"Note, if this happens often, consider increasing the `max_seq_length`."
+                        f"Note, if this happens often, consider increasing the `max_seq_length`.\n\n"
                     )
                     batch["labels"][i, :] = self.ignore_index
 

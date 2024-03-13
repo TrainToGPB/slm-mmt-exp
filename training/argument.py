@@ -123,8 +123,8 @@ def parse_arguments_llama(yaml_path):
     # data config
     parser.add_argument('--dataset_name', type=str, default=data_config['dataset_name'], help="Dataset name (from HuggingFace)")
     parser.add_argument('--instruction', type=str, default=data_config['instruction'], help="Training instruction for the model.")
-    parser.add_argument('--en_sign', type=str, default=data_config['en_sign'], help="Instruction or prompt that the following sentence is English.")
-    parser.add_argument('--ko_sign', type=str, default=data_config['ko_sign'], help="Instruction or prompt that the following sentence is Korean.")
+    parser.add_argument('--suffix_src', type=str, default=data_config['suffix_src'], help="Suffix for the prompt in source language")
+    parser.add_argument('--suffix_tgt', type=str, default=data_config['suffix_tgt'], help="Suffix for the prompt in target language")
 
     # qlora config
     parser.add_argument('--use_4bit', type=lambda x: (str(x).lower() == 'true'), default=qlora_config['use_4bit'], help="Use 4-bit quantization")
@@ -159,6 +159,7 @@ def parse_arguments_llama_dpo(yaml_path):
     # train config
     parser.add_argument('--plm_name', type=str, default=train_config['plm_name'], help="Pretrained language model name (from HuggingFace)")
     parser.add_argument('--use_fsdp', type=lambda x: (str(x).lower() == 'true'), default=train_config['use_fsdp'], help="Use Fully-Sharded Data Parallel")
+    parser.add_argument('--use_unsloth', type=lambda x: (str(x).lower() == 'true'), default=train_config['use_unsloth'], help="Use UnSLoth")
     parser.add_argument('--device_map', type=str, default=train_config['device_map'], help="Device where to model put on")
     parser.add_argument('--output_dir', type=str, default=train_config['output_dir'], help="Output directory")
     parser.add_argument('--dataloader_num_workers', type=int, default=train_config['dataloader_num_workers'], help="Number of dataloader workers")
