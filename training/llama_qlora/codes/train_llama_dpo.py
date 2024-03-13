@@ -1,7 +1,7 @@
 # built-in
 import os
 import sys
-os.environ['CUDA_VISIBLE_DEVICES'] = '0,1,2,3'
+os.environ['CUDA_VISIBLE_DEVICES'] = '2'
 os.environ['TOKENIZERS_PARALLELISM'] = 'false'
 
 # third-party
@@ -29,13 +29,14 @@ def load_model_and_tokenizer(plm_name, lora_path, device_map, bnb_config, pol_ad
         torch_dtype=bnb_config.bnb_4bit_compute_dtype,
         attn_implementation='flash_attention_2',
         device_map=device_map
+        # device_map 관련 에러: https://github.com/huggingface/trl/issues/921 참고
     )
     model.config.use_cache = False
 
     # Policy adapter (trainable)
     model = PeftModel.from_pretrained(
         model,
-        model_id=lora_path,
+        lora_path,
         is_trainable=True,
         adapter_name=pol_adapter_name,
     )
@@ -47,7 +48,7 @@ def load_model_and_tokenizer(plm_name, lora_path, device_map, bnb_config, pol_ad
         adapter_name=ref_adapter_name,
     )
     tokenizer = AutoTokenizer.from_pretrained(plm_name, trust_remote_code=True)
-
+    
     return model, tokenizer
 
 
@@ -121,14 +122,14 @@ def train(args):
         warmup_ratio=args.warmup_ratio
     )
     training_args.warmup_steps = warmup_steps
+    print("WARMUP STEPS:", training_args.warmup_steps)
 
     if args.just_test:
         training_args.output_dir = '../models/test'
         training_args.logging_steps = 1
-        training_args.eval_steps = 1
         training_args.save_steps = 1
         project_name = 'test'
-        train_dataset = dataset.select(range(300))
+        train_dataset = dataset.select(range(100))
     else:
         project_name = args.project_name
         train_dataset = dataset
@@ -154,7 +155,8 @@ def train(args):
         callbacks=[SavePeftModelCallback],
     )
     trainer.train()
-    trainer.save_model(args.output_dir)
+    trainer.save_model(training_args.output_dir)
+    trainer.model.save_pretrained(training_args.output_dir)
 
 
 if __name__ == '__main__':
