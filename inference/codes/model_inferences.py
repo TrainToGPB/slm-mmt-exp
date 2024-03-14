@@ -65,6 +65,10 @@ sys.path.append('../../')
 from training.training_utils import set_seed
 
 
+LANG_TABLE = {
+    "en": "English",
+    "ko": "한국어"
+}
 SEED = 42
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print("DEVICE:", DEVICE)
@@ -102,6 +106,7 @@ def load_model_and_tokenizer(model_type):
         # alma-qlora-dpo 모델 정상 사용 불가: lora_A 가중치 비어있음
         'alma-qlora-dpo-policy': (('haoranxu/ALMA-7B-Pretrain', os.path.join(SCRIPT_DIR, '../../training/llama_qlora/models/alma-dpo/policy')), LlamaForCausalLM, LlamaTokenizer),
         'alma-qlora-dpo-reference': (('haoranxu/ALMA-7B-Pretrain', os.path.join(SCRIPT_DIR, '../../training/llama_qlora/models/alma-dpo/reference')), LlamaForCausalLM, LlamaTokenizer),
+        'llama-sparta-qlora': (('beomi/open-llama-2-ko-7b', '../../training/llama_qlora/models/baseline-sparta'), LlamaForCausalLM, LlamaTokenizer),
     }
     assert model_type in model_mapping.keys(), 'Wrong model type'
 
@@ -132,14 +137,13 @@ def load_model_and_tokenizer(model_type):
                 model_name, 
                 max_length=768 if model_type.startswith('llama') else 512,
                 quantization_config=bnb_config, 
-                attn_implementation='flash_attention_2' if model_type.startswith('alma') else None,
+                attn_implementation='flash_attention_2' if 'sparta' in model_type or model_type.startswith('alma') else None,
                 torch_dtype=torch_dtype
             )
-            
             model = PeftModel.from_pretrained(
                 model, 
                 adapter_path, 
-                # torch_dtype=torch_dtype,
+                torch_dtype=torch_dtype,
                 adapter_name=model_type.split('-')[-1]
             )
     else:
@@ -164,7 +168,7 @@ def load_model_and_tokenizer(model_type):
 
 
 @torch.no_grad()
-def translate(model, tokenizer, text, model_type, print_result=False, max_length=512):
+def translate(model, tokenizer, text, model_type, src_lang=None, tgt_lang=None, print_result=False, max_length=512):
     """
     Translate the input text using the pre-trained language model.
 
@@ -182,26 +186,25 @@ def translate(model, tokenizer, text, model_type, print_result=False, max_length
         model.to(DEVICE)
 
     if model_type.startswith('madlad'):
-        text = f"<2ko> {text}"
+        input_text = f"<2{tgt_lang}> {text}"
     elif 'llama' in model_type:
-        text = f"### English: {text}\n### 한국어: "
+        if 'sparta' in model_type:
+            input_text = f"Translate this from {LANG_TABLE[src_lang]} to {LANG_TABLE[tgt_lang]}.\n### {LANG_TABLE[src_lang]}: {text}\n### {LANG_TABLE[tgt_lang]}:"
+        else:
+            input_text = f"### {LANG_TABLE[src_lang]}: {text}\n### {LANG_TABLE[tgt_lang]}: "
     elif model_type.startswith('mt5'):
-        text = f"<en> {text} <ko>"
+        input_text = f"<{src_lang}> {text} <{tgt_lang}>"
     elif model_type.startswith('alma'):
-        text = f"Translate this from English to Russian:\nEnglish: {text}\nRussian: "
+        input_text = f"Translate this from {LANG_TABLE[src_lang]} to {LANG_TABLE[tgt_lang]}:\n{LANG_TABLE[src_lang]}: {text}\n{LANG_TABLE[tgt_lang]}: "
 
     if 'mbart' in model_type:
-        src_lang = 'en_XX'
-        tgt_lang = 'ko_KR'
         tokenizer.src_lang = src_lang
         tokenizer.tgt_lang = tgt_lang
     elif 'nllb' in model_type:
-        src_lang = 'eng_Latn'
-        tgt_lang = 'kor_Hang'
         tokenizer.src_lang = src_lang
         tokenizer.tgt_lang = tgt_lang
     
-    inputs = tokenizer(text, return_tensors="pt", max_length=max_length, truncation=True)
+    inputs = tokenizer(input_text, return_tensors="pt", max_length=max_length, truncation=True)
     inputs = {key: value.to(DEVICE) for key, value in inputs.items()}
 
     if model_type.endswith('vllm'):
@@ -216,7 +219,7 @@ def translate(model, tokenizer, text, model_type, print_result=False, max_length
         outputs = model.generate([text], sampling_params, use_tqdm=False)
         translated_text = outputs[0].outputs[0].text
     else:
-        if model_type.startswith('llama-aihub-qlora') or model_type.startswith('alma'):
+        if (model_type.startswith('llama') and 'qlora' in model_type) or model_type.startswith('alma'):
             inputs['input_ids'] = inputs['input_ids'][0][:-1].unsqueeze(dim=0)
             inputs['attention_mask'] = inputs['attention_mask'][0][:-1].unsqueeze(dim=0)
             outputs = model.generate(**inputs, max_length=max_length, eos_token_id=46332)
@@ -242,7 +245,7 @@ def translate(model, tokenizer, text, model_type, print_result=False, max_length
     return translated_text
 
 
-def inference(model_type, source_column, target_column, file_path, print_result=False):
+def inference(model_type, source_column, target_column, file_path, src_lang=None, tgt_lang=None, print_result=False):
     """
     Perform inference on the specified dataset using the specified pre-trained language model.
 
@@ -266,12 +269,22 @@ def inference(model_type, source_column, target_column, file_path, print_result=
         max_length = 512
 
     eval_df = pd.read_csv(file_path)
-    tqdm.pandas(desc="Translating")
-    eval_df[target_column] = eval_df[source_column].progress_apply(lambda text: translate(model, tokenizer, text, model_type, print_result, max_length))
+    tqdm_iterator = tqdm(eval_df.iterrows(), total=len(eval_df), desc="Translating")
+    translations = []
+    for _, row in tqdm_iterator:
+        if 'direction' in eval_df.columns:
+            src_lang, tgt_lang = row['direction'].split('-')
+        else:
+            src_lang = 'en' if src_lang is None else src_lang
+            tgt_lang = 'ko' if tgt_lang is None else tgt_lang
+        text = row[source_column]
+        translation = translate(model, tokenizer, text, model_type, src_lang, tgt_lang, print_result, max_length)
+        translations.append(translation)
+    eval_df[target_column] = translations
     eval_df.to_csv(file_path, index=False)
 
 
-def inference_single(model_type, text):
+def inference_single(model_type, text, src_lang=None, tgt_lang=None):
     """
     Perform inference on a single sentence using the specified pre-trained language model.
 
@@ -286,8 +299,9 @@ def inference_single(model_type, text):
     model, tokenizer = load_model_and_tokenizer(model_type)
     if not model_type.endswith('vllm'):
         model.to(DEVICE)
-
-    translation = translate(model, tokenizer, text, model_type)
+    src_lang = 'en' if src_lang is None else src_lang
+    tgt_lang = 'ko' if tgt_lang is None else tgt_lang
+    translation = translate(model, tokenizer, text, model_type, src_lang, tgt_lang)
 
     return translation
 
@@ -300,34 +314,22 @@ if __name__ == '__main__':
     parser.add_argument("--inference_type", type=str, default='sentence', help="Inference type (sentence or dataset)")
     parser.add_argument("--dataset", type=str, default='sample', help="Dataset path for inference (only for dataset inference, preset: aihub / flores / sample, or custom path to a CSV file)")
     parser.add_argument("--sentence", type=str, default="NMIXX is a South Korean girl group that made a comeback on January 15, 2024 with their new song 'DASH'.", help="Input English text for inference (only for sentence inference)")
+    parser.add_argument("--src_lang", type=str, default="en", help="Source language code (just for sentence translation; default: en)")
+    parser.add_argument("--tgt_lang", type=str, default="ko", help="Target language code (just for sentence translation; default: ko)")
     args = parser.parse_args()
     dataset = args.dataset
     
-    source_column = "en"
     if args.dataset.endswith('.csv'):
         file_path = args.dataset
     else:
         file_path_dict = {
             'sample': os.path.join(SCRIPT_DIR, "../../sample_texts_for_inference.csv"),
             'aihub': os.path.join(SCRIPT_DIR, "../results/test_tiny_uniform100_inferenced.csv"),
-            'flores': os.path.join(SCRIPT_DIR, "../results/test_flores_inferenced.csv")
+            'flores': os.path.join(SCRIPT_DIR, "../results/test_flores_inferenced.csv"),
+            'sparta': os.path.join(SCRIPT_DIR, "../results/test_sparta_bidir_inferenced.csv"),
         }
         file_path = file_path_dict[dataset]
 
-    # model_type_candidates = [
-    #     'mbart',
-    #     'nllb-600m',
-    #     'madlad',
-    #     'llama',
-    #     'mbart-aihub',
-    #     'llama-aihub-qlora',
-    #     'llama-aihub-qlora-bf16',
-    #     'llama-aihub-qlora-fp16',
-    #     'llama-aihub-qlora-bf16-vllm', # Best model
-    #     'llama-aihub-qlora-augment',
-    #     'llama-aihub-qlora-reverse-new',
-    #     'llama-aihub-qlora-reverse-overlap'
-    # ]
     model_type_dict = {
         'mbart': 'mbart',
         'nllb': 'nllb-600m',
@@ -338,7 +340,8 @@ if __name__ == '__main__':
         'madlad-qlora': 'madlad-aihub-7b-bt-qlora',
         'mt5-fft': 'mt5-aihub-base-fft',
         'alma-pol': 'alma-qlora-dpo-policy',
-        'alma-ref': 'alma-qlora-dpo-reference'
+        'alma-ref': 'alma-qlora-dpo-reference',
+        'llama-sparta': 'llama-sparta-qlora',
     }
     
     model_type = model_type_dict[args.model_type]
@@ -350,9 +353,10 @@ if __name__ == '__main__':
         print(f"Sentence: {args.sentence}")
 
     if args.inference_type == 'dataset':
+        source_column = "src" if args.dataset == 'sparta' else "en"
         target_column = model_type + "_trans"
         inference(model_type, source_column, target_column, file_path, print_result=True)
     
     if args.inference_type == 'sentence':
-        translation = inference_single(model_type, args.sentence)
+        translation = inference_single(model_type, args.sentence, args.src_lang, args.tgt_lang)
         print(translation)
