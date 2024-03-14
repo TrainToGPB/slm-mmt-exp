@@ -79,7 +79,7 @@ def calculate_sentence_bleu(reference, candidate):
     return bleu * 100
 
 
-def calculate_bleu(eval_df, column_name):
+def calculate_bleu(eval_df, column_name, ref_col='ko'):
     """
     Calculate the BLEU score for evaluating translation quality.
 
@@ -90,7 +90,7 @@ def calculate_bleu(eval_df, column_name):
     Returns:
     - float: BLEU score as a percentage.
     """
-    references = eval_df['ko'].apply(lambda x: [x]).tolist()
+    references = eval_df[ref_col].apply(lambda x: [x]).tolist()
     eval_df[column_name] = eval_df[column_name].fillna(' ')
     candidates = eval_df[column_name].tolist()
     bleu = corpus_bleu(references, candidates)
@@ -115,7 +115,7 @@ def calculate_sentence_rouge(reference, candidate):
     return rouge_1 * 100, rouge_2 * 100
 
 
-def calculate_rouge(eval_df, column_name):
+def calculate_rouge(eval_df, column_name, ref_col='ko'):
     """
     Calculate the ROUGE-1 and ROUGE-2 scores for the given evaluation dataframe and column name.
 
@@ -127,7 +127,7 @@ def calculate_rouge(eval_df, column_name):
     - tuple: A tuple containing the ROUGE-1 and ROUGE-2 scores.
     """
     eval_df[column_name] = eval_df[column_name].fillna(' ')
-    rouge_1_scores, rouge_2_scores = zip(*eval_df.apply(lambda row: calculate_sentence_rouge(row['ko'], row[column_name]), axis=1))
+    rouge_1_scores, rouge_2_scores = zip(*eval_df.apply(lambda row: calculate_sentence_rouge(row[ref_col], row[column_name]), axis=1))
     rouge_1, rouge_2 = get_average(rouge_1_scores), get_average(rouge_2_scores)
     return rouge_1, rouge_2
 
@@ -146,7 +146,7 @@ def calculate_sentence_wer(reference, candidate):
     return Levenshtein.distance(reference.split(), candidate.split())
 
 
-def calculate_wer(eval_df, column_name):
+def calculate_wer(eval_df, column_name, ref_col='ko'):
     """
     Calculate the Word Error Rate (WER) for a given evaluation dataframe and column name.
 
@@ -158,12 +158,12 @@ def calculate_wer(eval_df, column_name):
     - float: The calculated Word Error Rate (WER).
     """
     eval_df = eval_df.fillna(' ')
-    wer_scores = eval_df.apply(lambda row: calculate_sentence_wer(row['ko'], row[column_name]), axis=1)
+    wer_scores = eval_df.apply(lambda row: calculate_sentence_wer(row[ref_col], row[column_name]), axis=1)
     wer = get_average(wer_scores)
     return wer
 
 
-def calculate_sentence_token_bleu(reference, candidate, tokenizer_name='gogamza/kobart-base-v2'):
+def calculate_sentence_token_bleu(reference, candidate, ref_col='ko'):
     """
     Calculates the BLEU score between a reference sentence and a candidate sentence.
 
@@ -175,6 +175,10 @@ def calculate_sentence_token_bleu(reference, candidate, tokenizer_name='gogamza/
     Returns:
     - float: The BLEU score between the reference and candidate sentences.
     """
+    tokenizer_table = {
+        'ko': 'gogamza/kobart-base-v2'
+    }
+    tokenizer_name = tokenizer_table[ref_col]
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
 
     reference_tokens = tokenizer.tokenize(reference)
@@ -185,7 +189,7 @@ def calculate_sentence_token_bleu(reference, candidate, tokenizer_name='gogamza/
     return token_bleu
 
 
-def calculate_token_bleu(eval_df, column_name, tokenizer_name='gogamza/kobart-base-v2'):
+def calculate_token_bleu(eval_df, column_name, ref_col='ko'):
     """
     Calculate the token-level BLEU score for evaluating translation quality.
 
@@ -198,9 +202,13 @@ def calculate_token_bleu(eval_df, column_name, tokenizer_name='gogamza/kobart-ba
     - float: The token-level BLEU score.
 
     """
+    tokenizer_table = {
+        'ko': 'gogamza/kobart-base-v2'
+    }
+    tokenizer_name = tokenizer_table[ref_col]
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
 
-    references = eval_df['ko'].tolist()
+    references = eval_df[ref_col].tolist()
     candidates = eval_df[column_name].fillna(' ').tolist()
 
     references = [tokenizer.tokenize(ref) for ref in references]
@@ -229,7 +237,7 @@ def calculate_sentence_sacrebleu(reference, candidate):
     return sacrebleu
 
 
-def calculate_sacrebleu(eval_df, column_name):
+def calculate_sacrebleu(eval_df, column_name, ref_col='ko'):
     """
     Calculate the SacreBLEU score for evaluating translation quality.
 
@@ -243,7 +251,7 @@ def calculate_sacrebleu(eval_df, column_name):
     """
     metric = evaluate.load('sacrebleu')
 
-    references = eval_df['ko'].tolist()
+    references = eval_df[ref_col].tolist()
     references = [[ref] for ref in references]
     candidates = eval_df[column_name].fillna(' ').tolist()
 
@@ -252,7 +260,7 @@ def calculate_sacrebleu(eval_df, column_name):
     return sacrebleu
 
 
-def calculate_sentence_bertscore(reference, candidate):
+def calculate_sentence_bertscore(reference, candidate, ref_col='ko'):
     """
     Calculate the BERTScore for a given reference and candidate sentence.
 
@@ -267,12 +275,12 @@ def calculate_sentence_bertscore(reference, candidate):
     candidate = candidate if candidate else ' '
     candidate = [candidate]
 
-    _, _, bertscore = bert_score.score(reference, candidate, lang='ko')
+    _, _, bertscore = bert_score.score(reference, candidate, lang=ref_col)
 
     return bertscore.item() * 100
 
 
-def calculate_bertscore(eval_df, column_name):
+def calculate_bertscore(eval_df, column_name, ref_col='ko'):
     """
     Calculate the BERTScore for a given evaluation dataframe and column name.
 
@@ -283,10 +291,10 @@ def calculate_bertscore(eval_df, column_name):
     Returns:
     - float: The average BERTScore multiplied by 100.
     """
-    references = eval_df['ko'].tolist()
+    references = eval_df[ref_col].tolist()
     candidates = eval_df[column_name].fillna(' ').tolist()
 
-    _, _, bertscore = bert_score.score(references, candidates, lang='ko')
+    _, _, bertscore = bert_score.score(references, candidates, lang=ref_col)
 
     avg_bertscore = bertscore.mean().item()
 
@@ -302,14 +310,14 @@ def calculate_sentence_xcomet(source, reference, candidate):
     return xcomet * 100
 
 
-def calculate_xcomet(eval_df, column_name):
+def calculate_xcomet(eval_df, column_name, src_col='en', ref_col='ko'):
     model_path = download_model("Unbabel/XCOMET-XL")
     model = load_from_checkpoint(model_path)
     triplets = []
     for _, example in eval_df.iterrows():
-        src_text = example['en']
+        src_text = example[src_col]
         mt_text = example[column_name] if not pd.isna(example[column_name]) else ' '
-        ref_text = example['ko']
+        ref_text = example[ref_col]
 
         triplet = {"src": src_text, "mt": mt_text, "ref": ref_text}
         triplets.append(triplet)
@@ -318,7 +326,7 @@ def calculate_xcomet(eval_df, column_name):
     return xcomet * 100
 
 
-def evaluate_all(eval_df, column_list=None, metric_list=None):
+def evaluate_all(eval_df, column_list=None, metric_list=None, src_col=None, ref_col=None):
     """
     Evaluate the performance of translation models on multiple columns using multiple metrics.
 
@@ -343,7 +351,7 @@ def evaluate_all(eval_df, column_list=None, metric_list=None):
             mean_bleu = calculate_bleu(eval_df, col)
             col_dict['bleu'] = mean_bleu
         if 'sacrebleu' in metric_list:
-            mean_sacrebleu = calculate_sacrebleu(eval_df, col)
+            mean_sacrebleu = calculate_sacrebleu(eval_df, col, ref_col=ref_col)
             col_dict['sacrebleu'] = mean_sacrebleu
         if 'rouge' in metric_list:
             mean_rouge_1, mean_rouge_2 = calculate_rouge(eval_df, col)
@@ -356,7 +364,7 @@ def evaluate_all(eval_df, column_list=None, metric_list=None):
             mean_bertscore = calculate_bertscore(eval_df, col)
             col_dict['bertscore'] = mean_bertscore
         if 'comet' in metric_list:
-            mean_comet = calculate_xcomet(eval_df, col)
+            mean_comet = calculate_xcomet(eval_df, col, src_col=src_col, ref_col=ref_col)
             col_dict['comet'] = mean_comet
 
         eval_dict[col] = col_dict
@@ -364,7 +372,7 @@ def evaluate_all(eval_df, column_list=None, metric_list=None):
     return eval_dict
 
 
-def evaluate_by_source(eval_df, source_list, column_list, metric_list):
+def evaluate_by_source(eval_df, source_list, column_list, metric_list, src_col, ref_col, data_source_col='source'):
     """
     Evaluate the performance of the model by source.
 
@@ -380,8 +388,8 @@ def evaluate_by_source(eval_df, source_list, column_list, metric_list):
     eval_dict_by_source = dict()
     for src in source_list:
         print(f'\n[EVALUATING SOURCE: {src}]')
-        subset_eval_df = eval_df[eval_df['source'] == src]
-        subset_eval_dict = evaluate_all(subset_eval_df, column_list, metric_list)
+        subset_eval_df = eval_df[eval_df[data_source_col].str.endswith(str(src))]
+        subset_eval_dict = evaluate_all(subset_eval_df, column_list, metric_list, src_col=src_col, ref_col=ref_col)
         eval_dict_by_source[src] = subset_eval_dict
     return eval_dict_by_source
 
@@ -431,7 +439,7 @@ def load_yaml_for_eval_results(yaml_path):
     return eval_dict
 
 
-if __name__ == '__main__':
+def main():
     import argparse
     """
     [COLUMN_LIST]
@@ -495,6 +503,7 @@ if __name__ == '__main__':
     """
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset", type=str, default='aihub', help="Dataset for evaluation")
+    parser.add_argument("--direction", type=str, default=None, help="Translation direction for evaluation")
     parser.add_argument("--save_yaml", type=lambda x: (str(x).lower() == 'true'), default=False, help="Save (or not) evaluation results in yaml file")
     args = parser.parse_args()
     dataset = args.dataset
@@ -507,29 +516,40 @@ if __name__ == '__main__':
     elif dataset == 'flores':
         eval_path = '../results/test_flores_inferenced.csv'
         save_path = '../results/test_flores_metrics.yaml'
+    elif dataset == 'sparta':
+        eval_path = '../results/test_sparta_bidir_inferenced.csv'
+        if args.direction is None:
+            save_path = '../results/test_sparta_bidir_metrics.yaml'
+            save_path_by_source = '../results/test_sparta_bidir_metrics_by_source.yaml'
+        else:
+            direction = args.direction.replace('-', '2')
+            save_path = f'../results/test_sparta_{direction}_metrics.yaml'
+            save_path_by_source = f'../results/test_sparta_{direction}_metrics_by_source.yaml'
 
     eval_df = pd.read_csv(eval_path)
+    if args.direction is not None:
+        eval_df = eval_df[eval_df['direction'] == args.direction]
 
     column_list = [
-        'papago_trans',
-        'google_trans', 
-        'deepl_trans', 
-        'mbart_trans', 
-        'nllb-600m_trans', 
-        'madlad_trans', 
-        'mbart-aihub_trans', 
+        # 'papago_trans',
+        # 'google_trans', 
+        # 'deepl_trans', 
+        # 'mbart_trans', 
+        # 'nllb-600m_trans', 
+        # 'madlad_trans', 
+        # 'mbart-aihub_trans', 
         # 'llama-aihub-qlora_trans',
         # 'llama-aihub-qlora-bf16_trans',
         # 'llama-aihub-qlora-fp16_trans',
-        'llama-aihub-qlora-bf16-vllm_trans',
+        # 'llama-aihub-qlora-bf16-vllm_trans',
         # 'llama-aihub-qlora-augment_trans',
         # 'llama-aihub-qlora-reverse-new_trans',
         # 'llama-aihub-qlora-reverse-overlap_trans',
-        'mt5-aihub-base-fft_trans'
+        # 'mt5-aihub-base-fft_trans'
+        'llama-sparta-qlora_trans'
     ]
     metric_list = [
         'sacrebleu', 
-        'bertscore', 
         'comet'
     ]
     source_list = [
@@ -544,20 +564,31 @@ if __name__ == '__main__':
     ]
 
     # evaluate all
-    eval_dict = evaluate_all(eval_df, column_list, metric_list)
+    if dataset == 'sparta':
+        src_col, ref_col = 'src', 'tgt'
+    else:
+        src_col, ref_col = 'en', 'ko'
+    eval_dict = evaluate_all(eval_df, column_list, metric_list, src_col=src_col, ref_col=ref_col)
     print_evaluation_results(eval_dict)
     if save_yaml:
         save_eval_results_as_yaml(eval_dict, save_path)
 
     # evaluate separately by source (only for aihub dataset)
-    if dataset == 'aihub':
-        eval_dict_by_source = evaluate_by_source(eval_df, source_list, column_list, metric_list)
+    if dataset == 'aihub' or dataset == 'sparta':
+        data_source_col = 'data_source' if dataset == 'sparta' else 'source'
+        src_col = 'src' if dataset == 'sparta' else 'en'
+        ref_col = 'tgt' if dataset == 'sparta' else 'ko'
+        eval_dict_by_source = evaluate_by_source(eval_df, 
+                                                 source_list, 
+                                                 column_list, 
+                                                 metric_list, 
+                                                 src_col=src_col, 
+                                                 ref_col=ref_col, 
+                                                 data_source_col=data_source_col)
         print_evaluation_results(eval_dict_by_source)
         if save_yaml:
             save_eval_results_as_yaml(eval_dict_by_source, save_path_by_source)
 
-    # SacreBLEU는 7.18/100점인데 반해, BERTScore는 89.33/100점
-    # reference = "미국 심장협회의 연구에 따르면 이 행동을 자주 하면 고혈압을 의심해 봐야 한다고 하는데요."
-    # candidate = "美심장협회 연구에 따르면, 이렇게 자주 한다면 고혈압을 의심해야 한다."
-    # score = calculate_sentence_bertscore(reference, candidate)
-    # print(score)
+
+if __name__ == '__main__':
+    main()
