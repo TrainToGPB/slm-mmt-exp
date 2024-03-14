@@ -35,7 +35,7 @@ __`--model_type`__ (default: `llama-bf16`)
 - `llama`: [LLaMA-QLoRA finetuned](https://huggingface.co/traintogpb/llama-2-en2ko-translator-7b-qlora-adapter)
 - `llama-bf16`: [LLaMA-QLoRA finetuned + BF16 upscaled & merged](https://huggingface.co/traintogpb/llama-2-en2ko-translator-7b-qlora-bf16-upscaled)
 - `llama-bf16-vllm`: [LLaMA-QLoRA finetuned + BF16 upscaled & merged](https://huggingface.co/traintogpb/llama-2-en2ko-translator-7b-qlora-bf16-upscaled) + vLLM inference
-- 'llama-sparta': [LLaMA-QLoRA finetuned](https://huggingface.co/traintogpb/llama-2-enko-translator-7b-qlora-adapter) with [traintogpb/aihub-flores-koen-integrated-sparta-30k](https://huggingface.co/datasets/traintogpb/aihub-flores-koen-integrated-sparta-30k)
+- `llama-sparta`: [LLaMA-QLoRA finetuned](https://huggingface.co/traintogpb/llama-2-enko-translator-7b-qlora-adapter) with [traintogpb/aihub-flores-koen-integrated-sparta-30k](https://huggingface.co/datasets/traintogpb/aihub-flores-koen-integrated-sparta-30k)
 
 __`--inference_type`__ (default: `sentence`)
 - `sentence`: 입력 문장 번역
