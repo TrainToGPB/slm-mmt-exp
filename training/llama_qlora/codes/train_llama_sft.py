@@ -367,7 +367,6 @@ def train(args):
                 references=decodings[f'label_{clean_key(key)}']
             )['score']
         
-        # 
         def compute_bertscore(decodings, key):
             lang = clean_key(key).split('2')[1]
             return bert_score.score(
