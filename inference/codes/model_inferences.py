@@ -106,7 +106,7 @@ def load_model_and_tokenizer(model_type):
         # alma-qlora-dpo 모델 정상 사용 불가: lora_A 가중치 비어있음
         'alma-qlora-dpo-policy': (('haoranxu/ALMA-7B-Pretrain', os.path.join(SCRIPT_DIR, '../../training/llama_qlora/models/alma-dpo/policy')), LlamaForCausalLM, LlamaTokenizer),
         'alma-qlora-dpo-reference': (('haoranxu/ALMA-7B-Pretrain', os.path.join(SCRIPT_DIR, '../../training/llama_qlora/models/alma-dpo/reference')), LlamaForCausalLM, LlamaTokenizer),
-        'llama-sparta-qlora': (('beomi/open-llama-2-ko-7b', '../../training/llama_qlora/models/baseline-sparta'), LlamaForCausalLM, LlamaTokenizer),
+        'llama-sparta-qlora': (('beomi/open-llama-2-ko-7b', 'traintogpb/llama-2-enko-translator-7b-qlora-adapter'), LlamaForCausalLM, LlamaTokenizer),
     }
     assert model_type in model_mapping.keys(), 'Wrong model type'
 
