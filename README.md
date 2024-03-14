@@ -20,6 +20,7 @@
 ```bash
 streamlit run ./app.py --server.fileWatcherType=none --server.port=30001
 ```
+- 현재 영<->한 양방향 번역을 위한 기능 추가 중 (24.03.14) -> 2번 방식 사용
 
 #### 2. `model_inferences.py` 이용
 ```bash
@@ -34,6 +35,7 @@ __`--model_type`__ (default: `llama-bf16`)
 - `llama`: [LLaMA-QLoRA finetuned](https://huggingface.co/traintogpb/llama-2-en2ko-translator-7b-qlora-adapter)
 - `llama-bf16`: [LLaMA-QLoRA finetuned + BF16 upscaled & merged](https://huggingface.co/traintogpb/llama-2-en2ko-translator-7b-qlora-bf16-upscaled)
 - `llama-bf16-vllm`: [LLaMA-QLoRA finetuned + BF16 upscaled & merged](https://huggingface.co/traintogpb/llama-2-en2ko-translator-7b-qlora-bf16-upscaled) + vLLM inference
+- 'llama-sparta': [LLaMA-QLoRA finetuned](https://huggingface.co/traintogpb/llama-2-enko-translator-7b-qlora-adapter) with [traintogpb/aihub-flores-koen-integrated-sparta-30k](https://huggingface.co/datasets/traintogpb/aihub-flores-koen-integrated-sparta-30k)
 
 __`--inference_type`__ (default: `sentence`)
 - `sentence`: 입력 문장 번역
@@ -44,6 +46,7 @@ __`--dataset`__ (default: `sample`)
 - `sample`: `sample_texts_for_inferences.csv`
 - `aihub`: `inference/results/test_tiny_uniform100_inferenced.csv` (사용 불가, 업로드 안 돼있음)
 - `flores`: `inference/results/test_flores_inferenced.csv` (사용 불가, 업로드 안 돼있음)
+- `sparta`: `inference/results/test_sparta_bidir_inferenced.csv` (사용 불가, 업로드 안 돼있음)
 - 따로 추가한 파일의 경로 입력 가능
 
 __`--sentence`__ (default: `"NMIXX is a South Korean girl group that made a comeback on January 15, 2024 with their new song 'DASH'."`)
