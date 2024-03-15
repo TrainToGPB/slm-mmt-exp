@@ -39,7 +39,16 @@ import pandas as pd
 # custom
 sys.path.append('./')
 from api_secret import PAPAGO_CLIENT_ID, PAPAGO_CLIENT_SECRET
-from api_secret import DEEPL_CLIENT_KEY
+from api_secret import (
+    DEEPL_CLIENT_KEY_0,
+    DEEPL_CLIENT_KEY_1,
+)
+
+
+DEEPL_LANGCODES = {
+    'en': 'EN-US',
+    'ko': 'KO',
+}
 
 
 class PapagoTranslator:
@@ -80,7 +89,7 @@ class PapagoTranslator:
         return translation
 
 
-def papato_translate_text(text):
+def papato_translate_text(text, src_lang='en', tgt_lang='ko'):
     """
     Translates a single text from English to Korean using Papago Translator.
 
@@ -91,11 +100,11 @@ def papato_translate_text(text):
     - papago_translation (str): The translated text.
     """
     papago_translator = PapagoTranslator(PAPAGO_CLIENT_ID, PAPAGO_CLIENT_SECRET)
-    papago_translation = papago_translator.translate(src_lang='en', tgt_lang='ko', text=text)
+    papago_translation = papago_translator.translate(src_lang=src_lang, tgt_lang=tgt_lang, text=text)
     return papago_translation
 
 
-def google_translate_text(text):
+def google_translate_text(text, src_lang='en', tgt_lang='ko'):
     """
     Translates a single text from English to Korean using Google Translate API.
 
@@ -106,11 +115,11 @@ def google_translate_text(text):
     - google_translation (str): The translated text.
     """
     google_translator = GoogleTranslator()
-    google_translation = google_translator.translate(src='en', dest='ko', text=text).text
+    google_translation = google_translator.translate(src=src_lang, dest=tgt_lang, text=text).text
     return google_translation
 
 
-def deepl_translate_text(text):
+def deepl_translate_text(text, tgt_lang='ko'):
     """
     Translates a single text using the DeepL translation API.
 
@@ -121,7 +130,7 @@ def deepl_translate_text(text):
     - deepl_translation (str): The translated text.
     """
     deepl_translator = DeeplTranslator(DEEPL_CLIENT_KEY)
-    deepl_translation = deepl_translator.translate_text(target_lang='KO', text=text)
+    deepl_translation = deepl_translator.translate_text(target_lang=DEEPL_LANGCODES[tgt_lang], text=text)
     return deepl_translation
 
 
@@ -146,7 +155,7 @@ def translate_single_text(text, translator='google'):
     return translation
 
 
-def papago_translate_df(df, client_id=PAPAGO_CLIENT_ID, client_secret=PAPAGO_CLIENT_SECRET):
+def papago_translate_df(df, client_id=PAPAGO_CLIENT_ID, client_secret=PAPAGO_CLIENT_SECRET, print_result=True):
     """
     Translates the 'en' column of a DataFrame using the Papago Translator API.
 
@@ -172,18 +181,33 @@ def papago_translate_df(df, client_id=PAPAGO_CLIENT_ID, client_secret=PAPAGO_CLI
         translations = []
         start_idx = 0
 
-    for text in tqdm(df['en'][start_idx:]):
+    tqdm_iterator = tqdm(df.iloc[start_idx:].iterrows(), total=len(df) - start_idx, desc='DeepL translating')
+    for _, row in tqdm_iterator:
+        if 'src' in df.columns:
+            text = row['src']
+        else:
+            text = row['en']
+        if 'direction' in df.columns:
+            src_lang, tgt_lang = row['direction'].split('-')
+            src_col = 'src'
+        else:
+            src_lang, tgt_lang = 'en', 'ko'
+            src_col = 'en'
+
         if error_occured:
             print("Error Occured: Papago")
-            translations.extend([None] * (len(df['en']) - len(translations)))
+            translations.extend([None] * (len(df[src_col]) - len(translations)))
             break
 
         try:
-            translation = translator.translate(src_lang='en', tgt_lang='ko', text=text)
+            translation = translator.translate(src_lang=src_lang, tgt_lang=tgt_lang, text=text)
         except:
             error_occured = True
             translation = None
 
+        if print_result:
+            print(f"[INPUT] {text}")
+            print(f"[OUTPUT] {translation}")
         translations.append(translation)
 
     df['papago_trans'] = translations
@@ -191,7 +215,7 @@ def papago_translate_df(df, client_id=PAPAGO_CLIENT_ID, client_secret=PAPAGO_CLI
     return df
 
 
-def google_translate_df(df):
+def google_translate_df(df, print_result=True):
     """
     Translates the 'en' column of a DataFrame from English to Korean using Google Translate API.
 
@@ -211,18 +235,33 @@ def google_translate_df(df):
         translations = []
         start_idx = 0
 
-    for text in tqdm(df['en'][start_idx:]):
+    tqdm_iterator = tqdm(df.iloc[start_idx:].iterrows(), total=len(df) - start_idx, desc='DeepL translating')
+    for _, row in tqdm_iterator:
+        if 'src' in df.columns:
+            text = row['src']
+        else:
+            text = row['en']
+        if 'direction' in df.columns:
+            src_lang, tgt_lang = row['direction'].split('-')
+            src_col = 'src'
+        else:
+            src_lang, tgt_lang = 'en', 'ko'
+            src_col = 'en'
+
         if error_occurred:
             print("Error Occured: Google")
-            translations.extend([None] * (len(df['en']) - len(translations)))
+            translations.extend([None] * (len(df[src_col]) - len(translations)))
             break
 
         try:
-            translation = translator.translate(src='en', dest='ko', text=text).text
+            translation = translator.translate(src=src_lang, dest=tgt_lang, text=text).text
         except:
             error_occurred = True
             translation = None
 
+        if print_result:
+            print(f"[INPUT] {text}")
+            print(f"[OUTPUT] {translation}")
         translations.append(translation)
 
     df['google_trans'] = translations
@@ -230,9 +269,9 @@ def google_translate_df(df):
     return df
 
 
-def deepl_translate_df(df, client_key=DEEPL_CLIENT_KEY):
+def deepl_translate_df(df, client_key=DEEPL_CLIENT_KEY_0, print_result=True):
     """
-    Translates the 'en' column of a DataFrame using the DeepL API.
+    Translates the source column of a DataFrame using the DeepL API.
 
     Args:
     - df (pandas.DataFrame): The DataFrame containing the 'en' column to be translated.
@@ -252,18 +291,32 @@ def deepl_translate_df(df, client_key=DEEPL_CLIENT_KEY):
         translations = []
         start_idx = 0
 
-    for text in tqdm(df['en'][start_idx:]):
+    tqdm_iterator = tqdm(df.iloc[start_idx:].iterrows(), total=len(df) - start_idx, desc='DeepL translating')
+    for _, row in tqdm_iterator:
+        if 'src' in df.columns:
+            text = row['src']
+        else:
+            text = row['en']
+        if 'direction' in df.columns:
+            _, tgt_lang = row['direction'].split('-')
+            src_col = 'src'
+        else:
+            _, tgt_lang = 'en', 'ko'
+            src_col = 'en'
         if error_occurred:
             print("Error Occured: DeepL")
-            translations.extend([None] * (len(df['en']) - len(translations)))
+            translations.extend([None] * (len(df[src_col]) - len(translations)))
             break
 
         try:
-            translation = translator.translate_text(target_lang='KO', text=text)
+            translation = translator.translate_text(target_lang=DEEPL_LANGCODES[tgt_lang], text=text)
         except:
             error_occurred = True
             translation = None
-            
+
+        if print_result:
+            print(f"[INPUT] {text}")
+            print(f"[OUTPUT] {translation}")
         translations.append(translation)
 
     df['deepl_trans'] = translations
@@ -302,7 +355,7 @@ def translate_df(df, translator='google', **kwargs):
     return translated_df
 
 
-if __name__ == '__main__':
+def main():
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument('--dataset', type=str, default='aihub', help='Dataset to inference')
@@ -311,25 +364,25 @@ if __name__ == '__main__':
 
     file_path_dict = {
         'aihub': '../results/test_tiny_uniform100_inferenced.csv',
-        'flores': '../results/test_flores_inferenced.csv'
+        'flores': '../results/test_flores_inferenced.csv',
+        'sparta': '../results/train_sparta_bidir_inferenced.csv'
     }
     file_path = file_path_dict[args.dataset]
-    
-    # # papago
-    # eval_df = pd.read_csv(file_path)
-    # eval_df = translate_df(eval_df, translator='papago', client_id=PAPAGO_CLIENT_ID, client_secret=PAPAGO_CLIENT_SECRET)
-    # eval_df.to_csv(file_path, index=False)
 
-    # # deepl
-    # eval_df = pd.read_csv(file_path)
-    # eval_df = translate_df(eval_df, translator='deepl', client_key=DEEPL_CLIENT_KEY)
-    # eval_df.to_csv(file_path, index=False)
-
-    # # google
-    # eval_df = pd.read_csv(file_path)
-    # eval_df = translate_df(eval_df, translator='google')
-    # eval_df.to_csv(file_path, index=False)
-
+    # deepl
+    client_keys = [
+        DEEPL_CLIENT_KEY_0, # 세형
+        DEEPL_CLIENT_KEY_1, # 성환님
+    ]
     eval_df = pd.read_csv(file_path)
-    eval_df = translate_df(eval_df, translator=args.translator) # Add client information if necessary
-    eval_df.to_csv(file_path, index=False) # Modify save path if necessary
+    for client_key in client_keys:
+        eval_df = translate_df(eval_df, translator='deepl', client_key=client_key, print_result=True)
+        eval_df.to_csv(file_path, index=False)
+
+    # eval_df = pd.read_csv(file_path)
+    # eval_df = translate_df(eval_df, translator=args.translator) # Add client information if necessary
+    # eval_df.to_csv(file_path, index=False) # Modify save path if necessary
+
+
+if __name__ == '__main__':
+    main()
