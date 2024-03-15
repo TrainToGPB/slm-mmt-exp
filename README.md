@@ -20,7 +20,6 @@
 ```bash
 streamlit run ./app.py --server.fileWatcherType=none --server.port=30001
 ```
-- 현재 영<->한 양방향 번역을 위한 기능 추가 중 (24.03.14) -> 2번 방식 사용
 
 #### 2. `model_inferences.py` 이용
 ```bash
