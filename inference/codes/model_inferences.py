@@ -38,7 +38,7 @@ Notes:
 # built-in
 import os
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-os.environ['CUDA_VISIBLE_DEVICES'] = '2'
+# os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 os.environ['VLLM_USE_MODELSCOPE'] = 'false'
 import re
 import sys
@@ -144,7 +144,7 @@ def load_model_and_tokenizer(model_type):
                 model, 
                 adapter_path, 
                 torch_dtype=torch_dtype,
-                adapter_name=model_type.split('-')[-1]
+                adapter_name=model_type.split('-')[-1] if 'dpo' in model_type else 'default'
             )
     else:
         model = model_cls.from_pretrained(model_name)
@@ -209,7 +209,7 @@ def translate(model, tokenizer, text, model_type, src_lang=None, tgt_lang=None, 
 
     if model_type.endswith('vllm'):
         sampling_params = SamplingParams(
-            temperature=0, 
+            temperature=0,
             top_p=0.95,
             skip_special_tokens=True,
             stop='<|endoftext|>',
@@ -327,6 +327,11 @@ if __name__ == '__main__':
             'aihub': os.path.join(SCRIPT_DIR, "../results/test_tiny_uniform100_inferenced.csv"),
             'flores': os.path.join(SCRIPT_DIR, "../results/test_flores_inferenced.csv"),
             'sparta': os.path.join(SCRIPT_DIR, "../results/test_sparta_bidir_inferenced.csv"),
+            'sparta-train': os.path.join(SCRIPT_DIR, "../results/train_sparta_bidir_inferenced.csv"),
+            'sparta-1train': os.path.join(SCRIPT_DIR, "../results/train_sparta_bidir_inferenced_part1.csv"),
+            'sparta-2train': os.path.join(SCRIPT_DIR, "../results/train_sparta_bidir_inferenced_part2.csv"),
+            'sparta-3train': os.path.join(SCRIPT_DIR, "../results/train_sparta_bidir_inferenced_part3.csv"),
+            'sparta-4train': os.path.join(SCRIPT_DIR, "../results/train_sparta_bidir_inferenced_part4.csv"),
         }
         file_path = file_path_dict[dataset]
 
@@ -353,7 +358,7 @@ if __name__ == '__main__':
         print(f"Sentence: {args.sentence}")
 
     if args.inference_type == 'dataset':
-        source_column = "src" if args.dataset == 'sparta' else "en"
+        source_column = "src" if args.dataset.startswith('sparta') else "en"
         target_column = model_type + "_trans"
         inference(model_type, source_column, target_column, file_path, print_result=True)
     
