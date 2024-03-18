@@ -69,11 +69,15 @@ accelerate launch \
     --metric_for_best_model sacrebleu_en2ko \
     --project_name sft_translation \
     --run_name llama-qlora-sparta \
-    --just_test true
+    --just_test false
 ```
 - `num_process`: GPU 개수 변경
 - `wandb_key`: 본인의 WandB API 키 사용
   - `project_name`: WandB project 이름
   - `run_name`: WandB project 내 run 이름
-
+- `just_test` (true인 경우):
+  - train 데이터셋 1,000개, eval 데이터셋 10개만 사용
+  - WandB의 `project_name`을 test로 고정
+  - `logging_steps`, `eval_steps`, `save_steps`를 1로 고정
+  - `output_dir`를 `./training/llama_qlora/models/test`로 고정
 - 그 외 학습 configuration은 `./training/llama_qlora/configs/`의 `llama_config.yaml`에서 조정할 수 있음

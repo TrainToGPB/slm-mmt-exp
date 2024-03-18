@@ -264,7 +264,7 @@ def train(args):
 
     if args.just_test:
         project_name = 'test'
-        output_dir = '../models/test'
+        output_dir = './training/llama_qlora/models/test'
         logging_steps = 1
         eval_steps = 1
         save_steps = 1
