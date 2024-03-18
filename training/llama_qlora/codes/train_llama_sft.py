@@ -41,12 +41,13 @@ from transformers import BitsAndBytesConfig
 from accelerate import Accelerator
 
 # custom
+sys.path.append('./training')
 sys.path.append('../../')
 from training_utils import set_seed
 from argument import load_yaml_config, parse_arguments_llama
 from data_collator import CustomDataCollatorForCompletionOnlyLM
-sys.path.append('../../../../') # Use your own path
-from custom_utils.general_secret import WANDB_CLIENT_KEY # Use your own path
+# sys.path.append('../../../../') # Use your own path
+# from custom_utils.general_secret import WANDB_CLIENT_KEY # Use your own path
 
 
 LANG_TABLE = {
@@ -280,7 +281,7 @@ def train(args):
 
     wandb.login(
         anonymous='never',
-        key=WANDB_CLIENT_KEY,
+        key=args.wandb_key,
         relogin=True,
         force=True
     )
@@ -448,9 +449,9 @@ def train(args):
 
 
 if __name__ == '__main__':
-    yaml_path = '../configs/llama_config.yaml'
+    yaml_path = './training/llama_qlora/configs/llama_config.yaml'
     args = parse_arguments_llama(yaml_path)
-    acc_yaml_path = '../configs/deepspeed_train_config_bf16.yaml'
+    acc_yaml_path = './training/llama_qlora/configs/deepspeed_train_config_bf16.yaml'
     acc_config = load_yaml_config(acc_yaml_path)
 
     args.per_device_batch_size = acc_config['deepspeed_config']['train_micro_batch_size_per_gpu']

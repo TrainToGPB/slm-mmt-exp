@@ -140,6 +140,7 @@ def parse_arguments_llama(yaml_path):
     # general config
     parser.add_argument('--project_name', type=str, default=general_config['project_name'], help="WandB project name")
     parser.add_argument('--run_name', type=str, default=general_config['run_name'], help="WandB run name")
+    parser.add_argument('--wandb_key', type=str, default=None, help="WandB API key")
 
     args = parser.parse_args()
 

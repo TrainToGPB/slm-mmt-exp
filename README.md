@@ -5,23 +5,18 @@
 2. 파파고, 구글, 딥엘 등 상용 번역 API와의 성능 비교
 
 ### Usage
-#### 0. Basic settings
-  __a. mkl-fft 설치__
-  ```bash
-  conda install -c intel mkl_fft
-  ```
+#### Install Dependencies
+```bash
+bash ./install_requirements.sh
+```
 
-  __b. requirements 설치__
-  ```
-  pip install -r requirements.txt
-  ```
-
-#### 1. `app.py` 이용 (recommended)
+### 1. Inference
+#### 1-1. `app.py` 이용 (recommended)
 ```bash
 streamlit run ./app.py --server.fileWatcherType=none --server.port=30001
 ```
 
-#### 2. `model_inferences.py` 이용
+#### 1-2. `model_inferences.py` 이용
 ```bash
 python ./inference/codes/model_inferences.py
 ```
@@ -52,3 +47,31 @@ __`--sentence`__ (default: `"NMIXX is a South Korean girl group that made a come
 - `--inference_type=sentence`인 경우 사용 가능
 - 번역하고자 하는 영어 문장 자유롭게 입력
 
+### 2. Training
+#### 2-1. LLaMA QLoRA SFT
+```bash
+accelerate launch \
+    --main_process_port 50001 \
+    --config_file ./training/llama_qlora/configs/deepspeed_train_config_bf16.yaml \
+    --num_processes 4 \
+    ./training/llama_qlora/codes/train_llama_sft.py \
+    --wandb_key YOUR_WANDB_KEY \
+    --dataloader_num_workers 4 \
+    --output_dir ./training/llama_qlora/models/baseline-sparta \
+    --per_device_batch_size 16 \
+    --num_epochs 2 \
+    --warmup_ratio 0.10 \
+    --lr_scheduler_type constant_with_warmup \
+    --optim paged_adamw_32bit \
+    --gradient_accumulation_steps 4 \
+    --logging_steps 25 \
+    --load_best_model_at_end true \
+    --metric_for_best_model sacrebleu_en2ko \
+    --project_name sft_translation \
+    --run_name llama-qlora-sparta \
+    --just_test true
+```
+- `num_process`: GPU 개수 변경
+- `wandb_key`: 본인의 WandB API 키 사용
+  - `project_name`: WandB project 이름
+  - `run_name`: WandB project 내 run 이름
