@@ -75,3 +75,5 @@ accelerate launch \
 - `wandb_key`: 본인의 WandB API 키 사용
   - `project_name`: WandB project 이름
   - `run_name`: WandB project 내 run 이름
+
+- 그 외 학습 configuration은 `./training/llama_qlora/configs/`의 `llama_config.yaml`에서 조정할 수 있음
