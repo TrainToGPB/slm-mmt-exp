@@ -132,7 +132,6 @@ def dequantize_and_save(
 
         model = LlamaForCausalLM.from_pretrained(
             model_path,
-            load_in_4bit=True,
             torch_dtype=torch.bfloat16,
             quantization_config=quantization_config,
             device_map=torch.cuda.current_device()
@@ -196,12 +195,11 @@ def convert_bf16_to_fp16(model_path, save_path):
 
 if __name__ == '__main__':
     model_path = 'beomi/open-llama-2-ko-7b'
-    adapter_path = '../models/baseline'
+    adapter_path = '../models/baseline-sparta'
     save_dequant_plm_path = '../models/open-llama-2-ko-7b-bf16-dequant-from-nf4'
-    save_dequant_merged_bf16_path = '../models/baseline-merged-bf16'
-    save_dequant_merged_fp16_path = '../models/baseline-merged-fp16'
+    save_dequant_merged_bf16_path = '../models/baseline-sparta-merged-bf16'
 
-    # dequantize_and_save(model_path, adapter_path, save_dequant_plm_path, save_dequant_merged_bf16_path)
+    dequantize_and_save(model_path, adapter_path, save_dequant_plm_path, save_dequant_merged_bf16_path)
 
-    convert_bf16_to_fp16(save_dequant_merged_bf16_path, save_dequant_merged_fp16_path)
+    # convert_bf16_to_fp16(save_dequant_merged_bf16_path, save_dequant_merged_fp16_path)
     

@@ -38,19 +38,19 @@ Notes:
 # built-in
 import os
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-# os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+os.environ['CUDA_VISIBLE_DEVICES'] = '0,1,2,3'
 os.environ['VLLM_USE_MODELSCOPE'] = 'false'
 import re
 import sys
 import argparse
 from tqdm import tqdm
+from datetime import datetime
 
 # third-party
 import torch
 import pandas as pd
-from peft import PeftModel, LoraConfig, LoraModel
+from peft import PeftModel
 from vllm import LLM, SamplingParams
-from transformers import AutoModelForCausalLM, AutoTokenizer
 from transformers import LlamaForCausalLM, LlamaTokenizer
 from transformers import MarianMTModel, MarianTokenizer
 from transformers import MBartForConditionalGeneration, MBart50Tokenizer
@@ -60,8 +60,7 @@ from transformers import MT5ForConditionalGeneration, T5Tokenizer
 from transformers import BitsAndBytesConfig
 
 # custom
-sys.path.append('./')
-sys.path.append('../../')
+sys.path.append(os.path.join(SCRIPT_DIR, '../../'))
 from training.training_utils import set_seed
 
 
@@ -107,6 +106,8 @@ def load_model_and_tokenizer(model_type):
         'alma-qlora-dpo-policy': (('haoranxu/ALMA-7B-Pretrain', os.path.join(SCRIPT_DIR, '../../training/llama_qlora/models/alma-dpo/policy')), LlamaForCausalLM, LlamaTokenizer),
         'alma-qlora-dpo-reference': (('haoranxu/ALMA-7B-Pretrain', os.path.join(SCRIPT_DIR, '../../training/llama_qlora/models/alma-dpo/reference')), LlamaForCausalLM, LlamaTokenizer),
         'llama-sparta-qlora': (('beomi/open-llama-2-ko-7b', 'traintogpb/llama-2-enko-translator-7b-qlora-adapter'), LlamaForCausalLM, LlamaTokenizer),
+        'llama-sparta-qlora-bf16': ('traintogpb/llama-2-enko-translator-7b-qlora-bf16-upscaled', LlamaForCausalLM, LlamaTokenizer),
+        'llama-sparta-qlora-bf16-vllm': ('traintogpb/llama-2-enko-translator-7b-qlora-bf16-upscaled', None, LlamaTokenizer),
     }
     assert model_type in model_mapping.keys(), 'Wrong model type'
 
@@ -119,7 +120,7 @@ def load_model_and_tokenizer(model_type):
     if 'qlora' in model_type:
         if '16' in model_type:
             if model_type.endswith('vllm'):
-                model = LLM(model=model_name, seed=SEED)
+                model = LLM(model=model_name, seed=SEED, dtype=torch.bfloat16, tensor_parallel_size=1)
             else:
                 if model_type.endswith('bf16'):
                     model = model_cls.from_pretrained(model_name, torch_dtype=torch.bfloat16)
@@ -185,6 +186,9 @@ def translate(model, tokenizer, text, model_type, src_lang=None, tgt_lang=None, 
     if not model_type.endswith('vllm'):
         model.to(DEVICE)
 
+    text = re.sub(r'\n', ' ', text)
+    text = re.sub(r'\s+', ' ', text)
+
     if model_type.startswith('madlad'):
         input_text = f"<2{tgt_lang}> {text}"
     elif 'llama' in model_type:
@@ -208,15 +212,32 @@ def translate(model, tokenizer, text, model_type, src_lang=None, tgt_lang=None, 
     inputs = {key: value.to(DEVICE) for key, value in inputs.items()}
 
     if model_type.endswith('vllm'):
+        use_beam_search = False
+        if use_beam_search:
+            # best_of만 custom 가능, 나머지는 고정
+            best_of = 4
+            temperature = 0.0
+            top_k = -1
+            top_p = 1.00
+        else:
+            # best_of는 무조건 1이고, 나머지는 custom 가능
+            best_of = 1
+            temperature = 0.0
+            top_k = 40
+            top_p = 0.95
+
         sampling_params = SamplingParams(
-            temperature=0,
-            top_p=0.95,
+            temperature=temperature,
+            use_beam_search=use_beam_search,
+            best_of=best_of,
+            top_k=top_k,
+            top_p=top_p,
             skip_special_tokens=True,
             stop='<|endoftext|>',
-            repetition_penalty=1.0,
+            repetition_penalty=1.1,
             max_tokens=350
         )
-        outputs = model.generate([text], sampling_params, use_tqdm=False)
+        outputs = model.generate([input_text], sampling_params, use_tqdm=False)
         translated_text = outputs[0].outputs[0].text
     else:
         if (model_type.startswith('llama') and 'qlora' in model_type) or model_type.startswith('alma'):
@@ -245,7 +266,17 @@ def translate(model, tokenizer, text, model_type, src_lang=None, tgt_lang=None, 
     return translated_text
 
 
-def inference(model_type, source_column, target_column, file_path, src_lang=None, tgt_lang=None, print_result=False):
+def inference(
+        model_type, 
+        model, 
+        tokenizer, 
+        source_column, 
+        target_column, 
+        file_path, 
+        src_lang=None, 
+        tgt_lang=None, 
+        print_result=False
+    ):
     """
     Perform inference on the specified dataset using the specified pre-trained language model.
 
@@ -257,7 +288,6 @@ def inference(model_type, source_column, target_column, file_path, src_lang=None
     - print_result (bool): Whether to print the translated text.
     """
     set_seed(SEED)
-    model, tokenizer = load_model_and_tokenizer(model_type)
     if not model_type.endswith('vllm'):
         model.to(DEVICE)
 
@@ -270,7 +300,7 @@ def inference(model_type, source_column, target_column, file_path, src_lang=None
 
     eval_df = pd.read_csv(file_path)
     tqdm_iterator = tqdm(eval_df.iterrows(), total=len(eval_df), desc="Translating")
-    translations = []
+    translations, elapsed_times = [], []
     for _, row in tqdm_iterator:
         if 'direction' in eval_df.columns:
             src_lang, tgt_lang = row['direction'].split('-')
@@ -278,13 +308,31 @@ def inference(model_type, source_column, target_column, file_path, src_lang=None
             src_lang = 'en' if src_lang is None else src_lang
             tgt_lang = 'ko' if tgt_lang is None else tgt_lang
         text = row[source_column]
+
+        start_time = datetime.now()
         translation = translate(model, tokenizer, text, model_type, src_lang, tgt_lang, print_result, max_length)
+        end_time = datetime.now()
+        elapsed_time = (end_time - start_time).total_seconds() * 1000
+        if print_result:
+            print(f"Elapsed time: {elapsed_time:.1f} ms")
+
         translations.append(translation)
+        elapsed_times.append(elapsed_time)
+
     eval_df[target_column] = translations
+    target_time_column = target_column.replace('_trans', '_time')
+    eval_df[target_time_column] = elapsed_times
     eval_df.to_csv(file_path, index=False)
 
 
-def inference_single(model_type, text, src_lang=None, tgt_lang=None):
+def inference_single(
+        model_type, 
+        model, 
+        tokenizer, 
+        text, 
+        src_lang=None, 
+        tgt_lang=None
+    ):
     """
     Perform inference on a single sentence using the specified pre-trained language model.
 
@@ -296,12 +344,15 @@ def inference_single(model_type, text, src_lang=None, tgt_lang=None):
     - translation (str): Translated text.
     """
     set_seed(SEED)
-    model, tokenizer = load_model_and_tokenizer(model_type)
     if not model_type.endswith('vllm'):
         model.to(DEVICE)
     src_lang = 'en' if src_lang is None else src_lang
     tgt_lang = 'ko' if tgt_lang is None else tgt_lang
+    start_time = datetime.now()
     translation = translate(model, tokenizer, text, model_type, src_lang, tgt_lang)
+    end_time = datetime.now()
+    elapsed_time = (end_time - start_time).total_seconds() * 1000
+    print(f"Elapsed time: {elapsed_time:.2f} ms")
 
     return translation
 
@@ -323,15 +374,11 @@ if __name__ == '__main__':
         file_path = args.dataset
     else:
         file_path_dict = {
-            'sample': os.path.join(SCRIPT_DIR, "../../sample_texts_for_inference.csv"),
+            'sample': os.path.join(SCRIPT_DIR, "../results/sample.csv"),
             'aihub': os.path.join(SCRIPT_DIR, "../results/test_tiny_uniform100_inferenced.csv"),
             'flores': os.path.join(SCRIPT_DIR, "../results/test_flores_inferenced.csv"),
             'sparta': os.path.join(SCRIPT_DIR, "../results/test_sparta_bidir_inferenced.csv"),
-            'sparta-train': os.path.join(SCRIPT_DIR, "../results/train_sparta_bidir_inferenced.csv"),
-            'sparta-1train': os.path.join(SCRIPT_DIR, "../results/train_sparta_bidir_inferenced_part1.csv"),
-            'sparta-2train': os.path.join(SCRIPT_DIR, "../results/train_sparta_bidir_inferenced_part2.csv"),
-            'sparta-3train': os.path.join(SCRIPT_DIR, "../results/train_sparta_bidir_inferenced_part3.csv"),
-            'sparta-4train': os.path.join(SCRIPT_DIR, "../results/train_sparta_bidir_inferenced_part4.csv"),
+            'dpo': os.path.join(SCRIPT_DIR, "../results/koen_dpo_bidir_inferenced.csv")
         }
         file_path = file_path_dict[dataset]
 
@@ -339,17 +386,21 @@ if __name__ == '__main__':
         'mbart': 'mbart',
         'nllb': 'nllb-600m',
         'madlad': 'madlad',
-        'llama': 'llama-aihub-qlora',
+        'llama-qlora': 'llama-aihub-qlora',
         'llama-bf16': 'llama-aihub-qlora-bf16',
-        'llama-bf16-vllm': 'llama-aihub-qlora-bf16-vllm',
+        'llama-vllm': 'llama-aihub-qlora-bf16-vllm',
         'madlad-qlora': 'madlad-aihub-7b-bt-qlora',
         'mt5-fft': 'mt5-aihub-base-fft',
         'alma-pol': 'alma-qlora-dpo-policy',
         'alma-ref': 'alma-qlora-dpo-reference',
-        'llama-sparta': 'llama-sparta-qlora',
+        'llama-sparta-qlora': 'llama-sparta-qlora',
+        'llama-sparta-bf16': 'llama-sparta-qlora-bf16',
+        'llama-sparta-vllm': 'llama-sparta-qlora-bf16-vllm',
     }
     
     model_type = model_type_dict[args.model_type]
+    model, tokenizer = load_model_and_tokenizer(model_type)
+
     print(f"Inference model: {model_type.upper()}")
     print(f"Inference type: {args.inference_type.upper()}")
     if args.inference_type == 'dataset':
@@ -358,10 +409,25 @@ if __name__ == '__main__':
         print(f"Sentence: {args.sentence}")
 
     if args.inference_type == 'dataset':
-        source_column = "src" if args.dataset.startswith('sparta') else "en"
-        target_column = model_type + "_trans"
-        inference(model_type, source_column, target_column, file_path, print_result=True)
+        source_column = "src" if any(args.dataset.startswith(bidir_data) for bidir_data in ['sparta', 'sample', 'dpo']) else "en"
+        target_column = model_type + "-tp4_trans"
+        inference(
+            model_type, 
+            model, 
+            tokenizer, 
+            source_column, 
+            target_column, 
+            file_path, 
+            print_result=True
+        )
     
     if args.inference_type == 'sentence':
-        translation = inference_single(model_type, args.sentence, args.src_lang, args.tgt_lang)
-        print(translation)
+        translation = inference_single(
+            model_type, 
+            model,
+            tokenizer,
+            args.sentence, 
+            args.src_lang, 
+            args.tgt_lang
+        )
+        print(f"Translation: {translation}")

@@ -68,7 +68,7 @@ def load_bf16_vllm_model(gpu_id=2):
 
 
 @st.cache_resource
-def load_qlora_sparta_model(gpu_id=3):
+def load_qlora_sparta_model(gpu_id=0):
     DEVICE = torch.device(gpu_id)
 
     plm_name = 'beomi/open-llama-2-ko-7b'
@@ -96,20 +96,48 @@ def load_qlora_sparta_model(gpu_id=3):
     return model, adapter_path, gpu_id
 
 
-def load_model(model_type):
+@st.cache_resource
+def load_bf16_sparta_model(gpu_id=1):
+    DEVICE = torch.device(f'cuda:{gpu_id}')
+
+    model_path = 'traintogpb/llama-2-enko-translator-7b-qlora-bf16-upscaled'
+    model = AutoModelForCausalLM.from_pretrained(model_path, torch_dtype=torch.bfloat16, device_map={"": DEVICE})
+    model.to(DEVICE)
+    return model, model_path, gpu_id
+
+
+@st.cache_resource
+def load_bf16_vllm_sparta_model(gpu_id=2):
+    os.environ['CUDA_VISIBLE_DEVICES'] = f'{gpu_id}'
+    model_path = 'traintogpb/llama-2-enko-translator-7b-qlora-bf16-upscaled'
+    model = LLM(model_path, seed=42)
+    return model, model_path, gpu_id
+
+
+def load_model(model_type, gpu_id):
     model_dict = {
         'qlora': load_qlora_model,
         'bf16-upscaled': load_bf16_model,
         'bf16-upscaled-vllm': load_bf16_vllm_model,
-        'qlora-sparta': load_qlora_sparta_model
+        'qlora-sparta': load_qlora_sparta_model,
+        'bf16-upscaled-sparta': load_bf16_sparta_model,
+        'bf16-upscaled-vllm-sparta': load_bf16_vllm_sparta_model,
+        'llama-sparta': load_bf16_vllm_sparta_model,
     }
     load_model_func = model_dict[model_type.lower()]
-    return load_model_func()
+    return load_model_func(gpu_id)
 
 
 def load_model_and_tokenizer(_model_type):
+    gpu_id = 0
+    if 'bf16' in _model_type.lower():
+        if 'vllm' not in _model_type.lower():
+            gpu_id = 1
+        else:
+            gpu_id = 2
+            
     with st.spinner(f"{_model_type} 모델 불러오는 중..."):
-        model, model_path, gpu_id = load_model(_model_type)
+        model, model_path, gpu_id = load_model(_model_type, gpu_id)
 
     tokenizer = AutoTokenizer.from_pretrained(model_path)
     tokenizer.pad_token = "</s>"
@@ -127,6 +155,9 @@ def translate(text, selected_model, model, tokenizer, gpu_id, src_lang='en', tgt
     if text is None or text == "" or pd.isna(text):
         text = " "
     if selected_model.lower().endswith('sparta'):
+        text = re.sub(r'\n+', ' ', text)
+        text = re.sub(r'\s+', ' ', text)
+        text = text.strip()
         text_formatted = f"Translate this from {FULL_LANG[src_lang]} to {FULL_LANG[tgt_lang]}.\n### {FULL_LANG[src_lang]} {text}\n### {FULL_LANG[tgt_lang]}:"
     else:
         text_formatted = f"### {src_lang}: {text}\n### {tgt_lang}: "
@@ -153,12 +184,14 @@ def translate(text, selected_model, model, tokenizer, gpu_id, src_lang='en', tgt
 
     elif isinstance(model, LLM):
         sampling_params = SamplingParams(
+            best_of=1,
             temperature=0, 
             top_p=0.95,
+            top_k=40,
             skip_special_tokens=True,
             stop='<|endoftext|>',
-            frequency_penalty=0.3,
-            repetition_penalty=1.3,
+            frequency_penalty=0.0,
+            repetition_penalty=1.1,
             max_tokens=350
         )
         start_time = datetime.now()
@@ -227,7 +260,13 @@ def main():
     st.title("EN-KO Translator")
     st.write("__문장을 입력하시면 번역해 드립니다!__")
 
-    selected_model = st.radio("번역할 모델을 선택하세요:", ["QLoRA", "BF16-Upscaled", "BF16-Upscaled-vLLM", "QLoRA-Sparta"])
+    # selected_model = st.radio("번역할 모델을 선택하세요:", ["QLoRA", 
+    #                                                       "BF16-Upscaled", 
+    #                                                       "BF16-Upscaled-vLLM", 
+    #                                                       "QLoRA-Sparta",
+    #                                                       "BF16-Upscaled-Sparta",
+    #                                                       "BF16-Upscaled-vLLM-Sparta"])
+    selected_model = st.radio("번역할 모델을 선택하세요:", ["LLaMA-Sparta"])
 
     st.sidebar.title("기능 선택")
     selected_option = st.sidebar.radio("__원하는 작업을 선택하세요__", options=["단일 문장 번역", "CSV 파일 번역"])
@@ -235,7 +274,7 @@ def main():
     if selected_option == "단일 문장 번역":
         st.write_stream(stream_single) # 입력된 문장을 번역합니다.
 
-        if selected_model.lower() == "qlora-sparta":
+        if 'sparta' in selected_model.lower():
             direction = st.radio("번역 방향을 선택하세요:", ["한국어 → 영어", "영어 → 한국어"])
             if direction == "한국어 → 영어":
                 src_lang, tgt_lang = 'ko', 'en'
@@ -275,7 +314,7 @@ def main():
             st.write("업로드한 파일 미리보기:")
             st.write(df)
 
-            if selected_model.lower() == "qlora-sparta":
+            if 'sparta' in selected_model.lower():
                 direction = st.radio("번역 방향을 선택하세요:", ["한국어 → 영어", "영어 → 한국어", "파일 내 'direction' 칼럼 있음"])
                 if direction == "한국어 → 영어":
                     direction = 'ko-en'

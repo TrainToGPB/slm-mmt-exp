@@ -531,7 +531,7 @@ def main():
         eval_df = eval_df[eval_df['direction'] == args.direction]
 
     column_list = [
-        # 'papago_trans',
+        'papago_trans',
         # 'google_trans', 
         # 'deepl_trans', 
         # 'mbart_trans', 
@@ -546,7 +546,9 @@ def main():
         # 'llama-aihub-qlora-reverse-new_trans',
         # 'llama-aihub-qlora-reverse-overlap_trans',
         # 'mt5-aihub-base-fft_trans'
-        'llama-sparta-qlora_trans'
+        # 'llama-sparta-qlora_trans',
+        # 'llama-sparta-qlora-bf16_trans',
+        # 'llama-sparta-qlora-bf16-vllm_trans',
     ]
     metric_list = [
         'sacrebleu', 
