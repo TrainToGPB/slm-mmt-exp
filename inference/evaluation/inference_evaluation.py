@@ -1,254 +1,83 @@
-"""
-Evaluation metrics for translation quality.
-
-The following functions are available:
-
-[For sentence-level evaluation]
-- calculate_sentence_bleu: Calculate the BLEU score for a candidate sentence compared to a reference sentence.
-- calculate_sentence_token_bleu: Calculate the BLEU score between a reference sentence and a candidate sentence using tokenization.
-- calculate_sentence_sacrebleu: Calculate the SacreBLEU score for a single sentence.
-- calculate_sentence_rouge: Calculate the ROUGE scores for a candidate sentence compared to a reference sentence.
-- calculate_sentence_wer: Calculate the Word Error Rate (WER) between a reference sentence and a candidate sentence.
-- calculate_sentence_bertscore: Calculate the BERTScore for a given reference and candidate sentence.
-
-[For corpus-level evaluation]
-- calculate_bleu: Calculate the BLEU score for evaluating translation quality.
-- calculate_token_bleu: Calculate the token-level BLEU score for evaluating translation quality.
-- calculate_sacrebleu: Calculate the SacreBLEU score for evaluating translation quality.
-- calculate_rouge: Calculate the ROUGE-1 and ROUGE-2 scores for the given evaluation dataframe and column name.
-- calculate_wer: Calculate the Word Error Rate (WER) for a given evaluation dataframe and column name.
-- calculate_bertscore: Calculate the BERTScore for a given evaluation dataframe and column name.
-
-[For evaluation]
-- evaluate_all: Evaluate the performance of translation models on multiple columns using multiple metrics.
-- evaluate_by_source: Evaluate the performance of the model by source.
-- print_evaluation_results: Prints the evaluation results.
-- save_eval_results_as_yaml: Save evaluation results as YAML file.
-- load_yaml_for_eval_results: Load a YAML file and return the contents as a dictionary.
-
-Examples:
-    python inference_evaluation.py --dataset aihub --save_yaml True
-    python inference_evaluation.py --dataset flores --save_yaml True
-
-Notes:
-    - The evaluation results are saved as a YAML file.
-    - The evaluation results are printed to the console.
-"""
-# built-in
-import os
-os.environ['CUDA_VISIBLE_DEVICES'] = '3'
 import yaml
-
-# third-party
-import evaluate
-import bert_score
-import Levenshtein
-import pandas as pd
 from tqdm import tqdm
-from rouge import Rouge
-from transformers import AutoTokenizer
+
+import evaluate
+import pandas as pd
 from comet import download_model, load_from_checkpoint
-from nltk.translate.bleu_score import sentence_bleu, corpus_bleu
 
 
-def get_average(tuple_data):
-    """
-    Calculate average of tuple data
-
-    Args:
-    - tuple_data (tuple): tuple data (e.g. (1, 2, 3)
-
-    Returns:
-    - float: average of tuple data
-    """
-    return sum(tuple_data) / len(tuple_data)
+def read_eval_dict_yaml(file_path):
+    try:
+        with open(file_path, 'r') as file:
+            eval_dict = yaml.load(file, Loader=yaml.FullLoader)
+    except FileNotFoundError:
+        eval_dict = dict()
+    return eval_dict
 
 
-def calculate_sentence_bleu(reference, candidate):
-    """
-    Calculate the BLEU score for a candidate sentence compared to a reference sentence.
-
-    Args:
-    - reference (str): The reference sentence.
-    - candidate (str): The candidate sentence.
-
-    Returns:
-    - float: The BLEU score as a percentage.
-    """
-    bleu = sentence_bleu([reference.split()], candidate.split())
-    return bleu * 100
+def save_eval_dict_yaml(eval_dict, save_path):
+    with open(save_path, 'w') as file:
+        yaml.dump(eval_dict, file)
 
 
-def calculate_bleu(eval_df, column_name, ref_col='ko'):
-    """
-    Calculate the BLEU score for evaluating translation quality.
-
-    Args:
-    - eval_df (pandas.DataFrame): DataFrame containing the evaluation data.
-    - column_name (str): Name of the column containing the translated sentences.
-
-    Returns:
-    - float: BLEU score as a percentage.
-    """
-    references = eval_df[ref_col].apply(lambda x: [x]).tolist()
-    eval_df[column_name] = eval_df[column_name].fillna(' ')
-    candidates = eval_df[column_name].tolist()
-    bleu = corpus_bleu(references, candidates)
-    return bleu * 100
+def load_xcomet_model():
+    model_path = download_model("Unbabel/XCOMET-XL")
+    model = load_from_checkpoint(model_path)
+    return model
 
 
-def calculate_sentence_rouge(reference, candidate):
-    """
-    Calculate the ROUGE scores for a candidate sentence compared to a reference sentence.
+def calculate_xcomet(eval_df, model, tgt_col, src_col='en', ref_col='ko'):
+    triplets = []
+    tqdm_iterator = tqdm(eval_df.iterrows(), total=len(eval_df), desc="Preparing triplets")
+    for _, example in tqdm_iterator:
+        src_text = example[src_col]
+        tgt_text = example[tgt_col] if not pd.isna(example[tgt_col]) else ' '
+        ref_text = example[ref_col]
 
-    Parameters:
-    - reference (str): The reference sentence.
-    - candidate (str): The candidate sentence.
+        triplet = {"src": src_text, "mt": tgt_text, "ref": ref_text}
+        triplets.append(triplet)
 
-    Returns:
-    - tuple: A tuple containing the ROUGE-1 score and ROUGE-2 score, both multiplied by 100.
-    """
-    rouge = Rouge()
-    rouge_scores = rouge.get_scores(candidate, reference)
-    rouge_1 = rouge_scores[0]['rouge-1']['f']
-    rouge_2 = rouge_scores[0]['rouge-2']['f']
-    return rouge_1 * 100, rouge_2 * 100
+    model_output = model.predict(triplets, batch_size=128, gpus=1)
+    score = sum(model_output["scores"]) / len(model_output["scores"]) * 100
 
-
-def calculate_rouge(eval_df, column_name, ref_col='ko'):
-    """
-    Calculate the ROUGE-1 and ROUGE-2 scores for the given evaluation dataframe and column name.
-
-    Parameters:
-    - eval_df (pandas.DataFrame): The evaluation dataframe.
-    - column_name (str): The name of the column containing the reference sentences.
-
-    Returns:
-    - tuple: A tuple containing the ROUGE-1 and ROUGE-2 scores.
-    """
-    eval_df[column_name] = eval_df[column_name].fillna(' ')
-    rouge_1_scores, rouge_2_scores = zip(*eval_df.apply(lambda row: calculate_sentence_rouge(row[ref_col], row[column_name]), axis=1))
-    rouge_1, rouge_2 = get_average(rouge_1_scores), get_average(rouge_2_scores)
-    return rouge_1, rouge_2
+    return score
 
 
-def calculate_sentence_wer(reference, candidate):
-    """
-    Calculates the Word Error Rate (WER) between a reference sentence and a candidate sentence.
+def calculate_xcomet_line_by_line(eval_df, model, tgt_col, src_col='en', ref_col='ko'):
+    triplets = []
+    tqdm_iterator = tqdm(eval_df.iterrows(), total=len(eval_df), desc="Preparing triplets")
+    for _, example in tqdm_iterator:
+        src_text = example[src_col]
+        tgt_text = example[tgt_col] if not pd.isna(example[tgt_col]) else ' '
 
-    Parameters:
-    - reference (str): The reference sentence.
-    - candidate (str): The candidate sentence.
+        if ref_col is not None:
+            ref_text = example[ref_col]
+            triplet = {"src": src_text, "mt": tgt_text, "ref": ref_text}
+        else:
+            triplet = {"src": src_text, "mt": tgt_text}
+        triplets.append(triplet)
 
-    Returns:
-    - int: The Word Error Rate (WER) between the reference and candidate sentences.
-    """
-    return Levenshtein.distance(reference.split(), candidate.split())
-
-
-def calculate_wer(eval_df, column_name, ref_col='ko'):
-    """
-    Calculate the Word Error Rate (WER) for a given evaluation dataframe and column name.
-
-    Parameters:
-    - eval_df (pandas.DataFrame): The evaluation dataframe containing the reference and hypothesis sentences.
-    - column_name (str): The name of the column in the dataframe that contains the hypothesis sentences.
-
-    Returns:
-    - float: The calculated Word Error Rate (WER).
-    """
-    eval_df = eval_df.fillna(' ')
-    wer_scores = eval_df.apply(lambda row: calculate_sentence_wer(row[ref_col], row[column_name]), axis=1)
-    wer = get_average(wer_scores)
-    return wer
-
-
-def calculate_sentence_token_bleu(reference, candidate, ref_col='ko'):
-    """
-    Calculates the BLEU score between a reference sentence and a candidate sentence.
-
-    Args:
-    - reference (str): The reference sentence.
-    - candidate (str): The candidate sentence.
-    - tokenizer_name (str, optional): The name of the tokenizer to use. Defaults to 'gogamza/kobart-base-v2'.
-
-    Returns:
-    - float: The BLEU score between the reference and candidate sentences.
-    """
-    tokenizer_table = {
-        'ko': 'gogamza/kobart-base-v2'
-    }
-    tokenizer_name = tokenizer_table[ref_col]
-    tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
-
-    reference_tokens = tokenizer.tokenize(reference)
-    candidate_tokens = tokenizer.tokenize(candidate)
-
-    token_bleu = sentence_bleu([reference_tokens], candidate_tokens) * 100
+    model_output = model.predict(triplets, batch_size=128, gpus=1)
+    scores = model_output["scores"]
     
-    return token_bleu
+    return scores
 
 
-def calculate_token_bleu(eval_df, column_name, ref_col='ko'):
-    """
-    Calculate the token-level BLEU score for evaluating translation quality.
+def calculate_speed(eval_df, tgt_col, len_col='src_token_len'):
+    tqdm_iterator = tqdm(eval_df.iterrows(), total=len(eval_df), desc="Calculating speed")
+    token_per_sec = []
+    for _, example in tqdm_iterator:
+        src_len = example[len_col]
+        time = example[tgt_col]
 
-    Args:
-    - eval_df (pandas.DataFrame): DataFrame containing the evaluation data.
-    - column_name (str): Name of the column containing the translations to be evaluated.
-    - tokenizer_name (str, optional): Name of the tokenizer to be used. Defaults to 'gogamza/kobart-base-v2'.
+        token_per_sec.append(src_len / time)
 
-    Returns:
-    - float: The token-level BLEU score.
+    mean_token_per_sec = sum(token_per_sec) / len(token_per_sec) * 1000
 
-    """
-    tokenizer_table = {
-        'ko': 'gogamza/kobart-base-v2'
-    }
-    tokenizer_name = tokenizer_table[ref_col]
-    tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
-
-    references = eval_df[ref_col].tolist()
-    candidates = eval_df[column_name].fillna(' ').tolist()
-
-    references = [tokenizer.tokenize(ref) for ref in references]
-    candidates = [tokenizer.tokenize(can) for can in candidates]
-
-    token_bleu_scores = [sentence_bleu(references, candidate) for candidate in tqdm(candidates)]
-    token_bleu = get_average(token_bleu_scores) * 100
-
-    return token_bleu
-
-
-def calculate_sentence_sacrebleu(reference, candidate):
-    """
-    Calculate the SacreBLEU score for a single sentence.
-
-    Args:
-    - reference (str): The reference sentence.
-    - candidate (str): The candidate sentence.
-
-    Returns:
-    - float: The SacreBLEU score.
-    """
-    metric = evaluate.load('sacrebleu')
-    candidate = candidate if not pd.isna(candidate) else ' '
-    sacrebleu = metric.compute(references=[[reference]], predictions=[candidate])['score']
-    return sacrebleu
+    return mean_token_per_sec
 
 
 def calculate_sacrebleu(eval_df, column_name, ref_col='ko'):
-    """
-    Calculate the SacreBLEU score for evaluating translation quality.
-
-    Args:
-    - eval_df (pandas.DataFrame): DataFrame containing the evaluation data.
-    - column_name (str): Name of the column containing the translations to be evaluated.
-
-    Returns:
-    - float: The SacreBLEU score.
-
-    """
     metric = evaluate.load('sacrebleu')
 
     references = eval_df[ref_col].tolist()
@@ -260,336 +89,126 @@ def calculate_sacrebleu(eval_df, column_name, ref_col='ko'):
     return sacrebleu
 
 
-def calculate_sentence_bertscore(reference, candidate, ref_col='ko'):
-    """
-    Calculate the BERTScore for a given reference and candidate sentence.
+def calculate_sacrebleu(eval_df, column_name, ref_col='ko'):
+    metric = evaluate.load('sacrebleu')
 
-    Parameters:
-    - reference (str): The reference sentence.
-    - candidate (str): The candidate sentence.
-
-    Returns:
-    - float: The BERTScore value for the candidate sentence.
-    """
-    reference = [reference]
-    candidate = candidate if candidate else ' '
-    candidate = [candidate]
-
-    _, _, bertscore = bert_score.score(reference, candidate, lang=ref_col)
-
-    return bertscore.item() * 100
-
-
-def calculate_bertscore(eval_df, column_name, ref_col='ko'):
-    """
-    Calculate the BERTScore for a given evaluation dataframe and column name.
-
-    Parameters:
-    - eval_df (pandas.DataFrame): The evaluation dataframe containing the reference and candidate sentences.
-    - column_name (str): The name of the column in the dataframe containing the candidate sentences.
-
-    Returns:
-    - float: The average BERTScore multiplied by 100.
-    """
     references = eval_df[ref_col].tolist()
     candidates = eval_df[column_name].fillna(' ').tolist()
 
-    _, _, bertscore = bert_score.score(references, candidates, lang=ref_col)
+    sacrebleu_scores = []
+    for ref, can in zip(references, candidates):
+        sacrebleu = metric.compute(references=[ref], predictions=[can])['score']
+        sacrebleu_scores.append(sacrebleu)
 
-    avg_bertscore = bertscore.mean().item()
-
-    return avg_bertscore * 100
-
-
-def calculate_sentence_xcomet(source, reference, candidate):
-    model_path = download_model("Unbabel/XCOMET-XL")
-    model = load_from_checkpoint(model_path)
-    triplets = [{"src": source, "mt": candidate, "ref": reference}]
-    model_output = model.predict(triplets, batch_size=1, gpus=1)
-    xcomet = model_output[0][0]
-    return xcomet * 100
+    return sacrebleu_scores
 
 
-def calculate_xcomet(eval_df, column_name, src_col='en', ref_col='ko'):
-    model_path = download_model("Unbabel/XCOMET-XL")
-    model = load_from_checkpoint(model_path)
-    triplets = []
-    for _, example in eval_df.iterrows():
-        src_text = example[src_col]
-        mt_text = example[column_name] if not pd.isna(example[column_name]) else ' '
-        ref_text = example[ref_col]
+def make_eval_dict(results, direction_cols, data_source_cols, save_yaml_path, metric_type='xcomet', print_dict=False):
+    if metric_type == 'xcomet':
+        xcomet_model = load_xcomet_model()
 
-        triplet = {"src": src_text, "mt": mt_text, "ref": ref_text}
-        triplets.append(triplet)
-    model_output = model.predict(triplets, batch_size=16, gpus=1)
-    xcomet = model_output[1]
-    return xcomet * 100
+    eval_dict = read_eval_dict_yaml(save_yaml_path)
+    for direction in direction_cols:
+        src_lang = direction.split('2')[0]
+        source_dict = dict()
+        for data_source in data_source_cols:
+            score_dict = dict()
+            for column in results.columns:
+                if 'trans' not in column or 'llama-3' not in column:
+                    continue
+                if direction in eval_dict and data_source in eval_dict[direction] and column in eval_dict[direction][data_source]:
+                    continue
 
+                target_data = results[results['data_source'].str.startswith(data_source) & results['direction'].str.startswith(src_lang)]
+                
+                print(f"Calculating {metric_type.upper()} of {direction.upper()}-{data_source.upper()}: {column}...")
+                if metric_type == 'xcomet':
+                    score_dict[column] = calculate_xcomet(target_data, xcomet_model, column, 'src', 'tgt')
+                elif metric_type == 'speed':
+                    score_dict[column] = calculate_speed(target_data, column, 'src_token_len')
+                elif metric_type == 'bleu':
+                    score_dict[column] = calculate_sacrebleu(target_data, column, 'tgt')
 
-def evaluate_all(eval_df, column_list=None, metric_list=None, src_col=None, ref_col=None):
-    """
-    Evaluate the performance of translation models on multiple columns using multiple metrics.
+            print(score_dict)
+                
+            source_dict[data_source] = score_dict
+        eval_dict[direction] = source_dict
 
-    Args:
-    - eval_df (pandas.DataFrame): The DataFrame containing the evaluation data.
-    - column_list (list, optional): The list of columns to evaluate. Defaults to ['google_trans'].
-    - metric_list (list, optional): The list of metrics to calculate. Defaults to ['sacrebleu'].
+    if print_dict:
+        print(eval_dict)
 
-    Returns:
-    - eval_dict (dict): A dictionary containing the evaluation results for each column.
-    """
-    if column_list is None:
-        column_list = ['google_trans']
-    if metric_list is None:
-        metric_list = ['sacrebleu']
-
-    eval_dict = dict()
-    for col in column_list:
-        print(f"Evaluting Column {col}..")
-        col_dict = dict()
-        if 'bleu' in metric_list:
-            mean_bleu = calculate_bleu(eval_df, col)
-            col_dict['bleu'] = mean_bleu
-        if 'sacrebleu' in metric_list:
-            mean_sacrebleu = calculate_sacrebleu(eval_df, col, ref_col=ref_col)
-            col_dict['sacrebleu'] = mean_sacrebleu
-        if 'rouge' in metric_list:
-            mean_rouge_1, mean_rouge_2 = calculate_rouge(eval_df, col)
-            col_dict['rouge_1'] = mean_rouge_1
-            col_dict['rouge_2'] = mean_rouge_2
-        if 'wer' in metric_list:
-            mean_wer = calculate_wer(eval_df, col)
-            col_dict['wer'] = mean_wer
-        if 'bertscore' in metric_list:
-            mean_bertscore = calculate_bertscore(eval_df, col)
-            col_dict['bertscore'] = mean_bertscore
-        if 'comet' in metric_list:
-            mean_comet = calculate_xcomet(eval_df, col, src_col=src_col, ref_col=ref_col)
-            col_dict['comet'] = mean_comet
-
-        eval_dict[col] = col_dict
+    save_eval_dict_yaml(eval_dict, save_yaml_path)
 
     return eval_dict
 
 
-def evaluate_by_source(eval_df, source_list, column_list, metric_list, src_col, ref_col, data_source_col='source'):
-    """
-    Evaluate the performance of the model by source.
+def save_line_by_line_metrics(eval_df, save_path, metric_type='xcomet', src_col='src', ref_col='tgt'):
+    if metric_type == 'xcomet':
+        xcomet_model = load_xcomet_model()
 
-    Args:
-    - eval_df (pandas.DataFrame): The evaluation dataframe.
-    - source_list (list): List of sources to evaluate.
-    - column_list (list): List of columns to evaluate.
-    - metric_list (list): List of metrics to evaluate.
+    for tgt_col in eval_df.columns:
+        # if 'trans' not in tgt_col:
+        #     continue
+        if tgt_col != 'ko':
+            continue
+        
+        print(f"Calculating {metric_type.upper()} of {tgt_col}...")
 
-    Returns:
-    - eval_dict_by_source (dict): A dictionary containing the evaluation results for each source.
-    """
-    eval_dict_by_source = dict()
-    for src in source_list:
-        print(f'\n[EVALUATING SOURCE: {src}]')
-        subset_eval_df = eval_df[eval_df[data_source_col].str.endswith(str(src))]
-        subset_eval_dict = evaluate_all(subset_eval_df, column_list, metric_list, src_col=src_col, ref_col=ref_col)
-        eval_dict_by_source[src] = subset_eval_dict
-    return eval_dict_by_source
+        if metric_type == 'xcomet':
+            # eval_col = tgt_col.replace('trans', 'xcomet')
+            eval_col = tgt_col + '_xcomet'
+            if eval_col in eval_df.columns:
+                continue
+            # xcomet_scores = calculate_xcomet_line_by_line(eval_df, xcomet_model, tgt_col, src_col, ref_col)
+            xcomet_scores = calculate_xcomet_line_by_line(eval_df, xcomet_model, 'ko', src_col)
+            eval_df.insert(eval_df.columns.get_loc(tgt_col) + 1, eval_col, xcomet_scores)
 
+        elif metric_type == 'bleu':
+            eval_col = tgt_col.replace('trans', 'bleu')
+            if eval_col in eval_df.columns:
+                continue
+            bleu_scores = calculate_sacrebleu(eval_df, tgt_col, ref_col)
+            eval_df.insert(eval_df.columns.get_loc(tgt_col) + 1, eval_col, bleu_scores)
 
-def print_evaluation_results(eval_dict):
-    """
-    Prints the evaluation results.
-
-    Args:
-    - eval_dict (dict): A dictionary containing the evaluation results.
-    """
-    for trans in eval_dict.keys():
-        print(f"[{str(trans).upper()}]")
-        for metric_key, metric_value in eval_dict[trans].items():
-            if isinstance(metric_value, dict):
-                print(f" - {str(metric_key).upper()}")
-                for metric, value in metric_value.items():
-                    print(f" - {metric}: {value}")
-            else:
-                print(f" - {str(metric_key).upper()}: {metric_value}")
-
-
-def save_eval_results_as_yaml(eval_dict, save_path):
-    """
-    Save evaluation results as YAML file.
-
-    Args:
-    - eval_dict (dict): Dictionary containing evaluation results.
-    - save_path (str): Path to save the YAML file.
-    """
-    with open(save_path, 'w') as file:
-        yaml.dump(eval_dict, file)
-
-
-def load_yaml_for_eval_results(yaml_path):
-    """
-    Load a YAML file and return the contents as a dictionary.
-
-    Parameters:
-    - yaml_path (str): The path to the YAML file.
-
-    Returns:
-    - eval_dict (dict): The contents of the YAML file as a dictionary.
-    """
-    with open(yaml_path, 'r') as file:
-        eval_dict = yaml.safe_load(file)
-    return eval_dict
+    eval_df.to_csv(save_path, index=False)
 
 
 def main():
     import argparse
-    """
-    [COLUMN_LIST]
-    # API
-    - papago_trans: Naver Papago API
-    - google_trans: Google Translate API
-    - deepl_trans: DeepL API
 
-    # Model Checkpoints
-    - mbart_trans: facebook/mbart-large-50-many-to-many-mmt
-    - nllb-600m_trans: facebook/nllb-200-distilled-600M
-    - nllb-1.3b_trans: facebook/nllb-200-distilled-1.3B
-    - madlad_trans: google/madlad400-3b-mt
-
-    # Finetuned 
-    -----------------------------------------------------------------------------------------------
-      model: facebook/mbart-large-50 (mbart)
-             beomi/open-llama-2-ko-7b (llama)
-      dataset: traintogpb/aihub-koen-translation-integrated-tiny-100k
-    -----------------------------------------------------------------------------------------------
-    - mbart-aihub_trans: Full-finetuned on aihub dataset
-    - llama_trans: Pretrained only
-    - llama-aihub-qlora_trans: QLORA finetuned on aihub dataset
-    - llama-aihub-qlora-bf16_trans: Upscaled with BrainFloat 16-bit from QLORA finetuned version
-    - llama-aihub-qlora-fp16_trans: Upscaled with Float 16-bit from QLORA finetuned version
-    - llama-aihub-qlora-augment_trans: QLoRA finetuned on augmented aihub dataset (240k)
-    - llama-aihub-qlora-reverse-new_trans: QLoRA finetuned on reverse direction (ko-en) from llama-aihub-qlora checkpoint with the new data
-    - llama-aihub-qlora-reverse-overlap_trans: QLoRA finetuned on reverse direction (ko-en) from llama-aihub-qlora checkpoint with the same data
-
-    [METRIC_LIST]
-    bleu: 
-    - Bi-Lingual Evaluation Understudy
-    - generation 단어가 reference에 얼마나 포함되는지
-    - 번역에서 가장 흔하게 사용되나 띄어쓰기 기준 단어 단위로 평가해 한국어 평가에 다소 부적합한 면이 있음
-    sacrebleu: 
-    - SacreBLEU
-    - BLEU와 원리가 같으나 띄어쓰기 단어 기준인 BLEU와 달리 토큰 단위로 평가해 한국어 평가에 조금 더 적합
-    - 배포된 국제 표준이 있어 통일된 평가가 가능
-    rouge: 
-    - Recall-Oriented Understudy for Gisting Evaluation
-    - reference 단어가 generation에 얼마나 포함되는지
-    - 번역보다는 요약 task에서 주로 사용하며, Rouge-L도 있으나 거의 Rouge-1과 동일하여 제외
-    wer: 
-    - Word Error Rate
-    - 단순하게 generation과 reference 간 단어 단위 오류율로 계산
-    - 번역보다는 음성 인식 task에서 주로 사용
-    bertscore:
-    - BERTScore
-    - reference와 generation을 BERT 기반으로 임베딩하여 cosine similarity로 평가
-    - 번역의 품질을 평가하는데 가장 최신이자 성능이 좋은 metric
-
-    [SOURCE_LIST]
-    - 111: 전문분야
-    - 124: 기술과학1
-    - 125: 사회과학
-    - 126: 일반
-    - 563: 산업정보(특허)
-    - 71265: 일상생활 및 구어체
-    - 71266: 기술과학2
-    - 71382: 방송콘텐츠
-    """
     parser = argparse.ArgumentParser()
-    parser.add_argument("--dataset", type=str, default='aihub', help="Dataset for evaluation")
-    parser.add_argument("--direction", type=str, default=None, help="Translation direction for evaluation")
-    parser.add_argument("--save_yaml", type=lambda x: (str(x).lower() == 'true'), default=False, help="Save (or not) evaluation results in yaml file")
+    parser.add_argument('--results_type', type=str, default='api', help='api, llama2, llama3')
+    parser.add_argument('--inference_type', type=str, default='eval_dict', help='eval_dict, line_by_line, all')
+    parser.add_argument('--metric_type', type=str, default='bleu', help='xcomet, bleu, speed')
     args = parser.parse_args()
-    dataset = args.dataset
-    save_yaml = args.save_yaml
 
-    if dataset == 'aihub':
-        eval_path = '../results/test_tiny_uniform100_inferenced.csv'
-        save_path = '../results/test_tiny_uniform100_metrics.yaml'
-        save_path_by_source = '../results/test_tiny_uniform100_metrics_by_source.yaml'
-    elif dataset == 'flores':
-        eval_path = '../results/test_flores_inferenced.csv'
-        save_path = '../results/test_flores_metrics.yaml'
-    elif dataset == 'sparta':
-        eval_path = '../results/test_sparta_bidir_inferenced.csv'
-        if args.direction is None:
-            save_path = '../results/test_sparta_bidir_metrics.yaml'
-            save_path_by_source = '../results/test_sparta_bidir_metrics_by_source.yaml'
-        else:
-            direction = args.direction.replace('-', '2')
-            save_path = f'../results/test_sparta_{direction}_metrics.yaml'
-            save_path_by_source = f'../results/test_sparta_{direction}_metrics_by_source.yaml'
+    results_path_dict = {
+        'api': '../results/test_sparta_bidir_api_inferenced.csv',
+        'llama2': '../results/test_sparta_bidir_llama2_inferenced.csv',
+        'llama3': '../results/test_sparta_bidir_llama3_inferenced.csv',
+        'mini-1m-train': '../results/mini-train.csv'
+    }
+    results_path = results_path_dict[args.results_type]
+    results = pd.read_csv(results_path)
 
-    eval_df = pd.read_csv(eval_path)
-    if args.direction is not None:
-        eval_df = eval_df[eval_df['direction'] == args.direction]
+    if args.inference_type == 'eval_dict':
+        direction_cols = ['en2ko', 'ko2en']
+        data_source_cols = ['aihub', 'flores']
 
-    column_list = [
-        'papago_trans',
-        # 'google_trans', 
-        # 'deepl_trans', 
-        # 'mbart_trans', 
-        # 'nllb-600m_trans', 
-        # 'madlad_trans', 
-        # 'mbart-aihub_trans', 
-        # 'llama-aihub-qlora_trans',
-        # 'llama-aihub-qlora-bf16_trans',
-        # 'llama-aihub-qlora-fp16_trans',
-        # 'llama-aihub-qlora-bf16-vllm_trans',
-        # 'llama-aihub-qlora-augment_trans',
-        # 'llama-aihub-qlora-reverse-new_trans',
-        # 'llama-aihub-qlora-reverse-overlap_trans',
-        # 'mt5-aihub-base-fft_trans'
-        # 'llama-sparta-qlora_trans',
-        # 'llama-sparta-qlora-bf16_trans',
-        # 'llama-sparta-qlora-bf16-vllm_trans',
-    ]
-    metric_list = [
-        'sacrebleu', 
-        'comet'
-    ]
-    source_list = [
-        111, 
-        124, 
-        125, 
-        126, 
-        563, 
-        71265, 
-        71266, 
-        71382
-    ]
+        save_path = results_path_dict.replace('inferenced', f'{args.metric_type}').replace('.csv', '.yaml')
+        make_eval_dict(results, direction_cols, data_source_cols, save_path, metric_type=args.metric_type, print_dict=True)
 
-    # evaluate all
-    if dataset == 'sparta':
-        src_col, ref_col = 'src', 'tgt'
-    else:
-        src_col, ref_col = 'en', 'ko'
-    eval_dict = evaluate_all(eval_df, column_list, metric_list, src_col=src_col, ref_col=ref_col)
-    print_evaluation_results(eval_dict)
-    if save_yaml:
-        save_eval_results_as_yaml(eval_dict, save_path)
+    elif args.inference_type == 'line_by_line':
+        save_line_by_line_metrics(results, save_path=results_path, metric_type=args.metric_type, src_col='en', ref_col=None)
 
-    # evaluate separately by source (only for aihub dataset)
-    if dataset == 'aihub' or dataset == 'sparta':
-        data_source_col = 'data_source' if dataset == 'sparta' else 'source'
-        src_col = 'src' if dataset == 'sparta' else 'en'
-        ref_col = 'tgt' if dataset == 'sparta' else 'ko'
-        eval_dict_by_source = evaluate_by_source(eval_df, 
-                                                 source_list, 
-                                                 column_list, 
-                                                 metric_list, 
-                                                 src_col=src_col, 
-                                                 ref_col=ref_col, 
-                                                 data_source_col=data_source_col)
-        print_evaluation_results(eval_dict_by_source)
-        if save_yaml:
-            save_eval_results_as_yaml(eval_dict_by_source, save_path_by_source)
+    elif args.inference_type == 'all':
+        direction_cols = ['en2ko', 'ko2en']
+        data_source_cols = ['aihub', 'flores']
+
+        save_path = results_path_dict.replace('inferenced', f'{args.metric_type}').replace('.csv', '.yaml')
+        make_eval_dict(results, direction_cols, data_source_cols, save_path, metric_type=args.metric_type, print_dict=True)
+
+        save_line_by_line_metrics(results, save_path=results_path, metric_type=args.metric_type)
 
 
 if __name__ == '__main__':
