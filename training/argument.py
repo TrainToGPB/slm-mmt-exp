@@ -115,16 +115,21 @@ def parse_arguments_llama(yaml_path):
     parser.add_argument('--seed', type=int, default=train_config['seed'], help="Random seed")
     parser.add_argument('--report_to', type=str, default=train_config['report_to'], help="Report to")
     parser.add_argument('--eval_accumulation_steps', type=int, default=train_config['eval_accumulation_steps'], help="Accumulations steps for evaluation")
+    parser.add_argument('--eos_token_id', type=int, default=train_config['eos_token_id'], help="Token ID of end-of-sentence token")
+    parser.add_argument('--pad_token_id', type=int, default=train_config['pad_token_id'], help="Token ID of padding token")
     parser.add_argument('--load_best_model_at_end', type=lambda x: (str(x).lower() == 'true'), default=train_config['load_best_model_at_end'], help="Load best model at the end")
     parser.add_argument('--metric_for_best_model', type=str, default=train_config['metric_for_best_model'], help="Metric for best model")
     parser.add_argument('--remove_unused_columns', type=lambda x: (str(x).lower() == 'true'), default=train_config['remove_unused_columns'], help="Remove dataset columns not used in training")
     parser.add_argument('--just_test', type=lambda x: (str(x).lower() == 'true'), default=train_config['just_test'], help="데이터 적게, 스텝 짧게 테스트 용")
 
     # data config
-    parser.add_argument('--dataset_name', type=str, default=data_config['dataset_name'], help="Dataset name (from HuggingFace)")
+    parser.add_argument('--train_dataset_name', type=str, default=data_config['train_dataset_name'], help="Train dataset name (from HuggingFace)")
+    parser.add_argument('--eval_dataset_name', type=str, default=data_config['eval_dataset_name'], help="Eval dataset name (from HuggingFace)")
     parser.add_argument('--instruction', type=str, default=data_config['instruction'], help="Training instruction for the model.")
     parser.add_argument('--suffix_src', type=str, default=data_config['suffix_src'], help="Suffix for the prompt in source language")
     parser.add_argument('--suffix_tgt', type=str, default=data_config['suffix_tgt'], help="Suffix for the prompt in target language")
+    parser.add_argument('--ko_col', type=str, default=data_config['ko_col'], help="Column name for Korean")
+    parser.add_argument('--en_col', type=str, default=data_config['en_col'], help="Column name for English")
 
     # qlora config
     parser.add_argument('--use_4bit', type=lambda x: (str(x).lower() == 'true'), default=qlora_config['use_4bit'], help="Use 4-bit quantization")
@@ -136,6 +141,7 @@ def parse_arguments_llama(yaml_path):
     parser.add_argument('--lora_dropout', type=float, default=qlora_config['lora_dropout'], help="LoRA dropout")
     parser.add_argument('--lora_r', type=int, default=qlora_config['lora_r'], help="LoRA r")
     parser.add_argument('--lora_target_modules', type=lambda x: x.split(','), default=qlora_config['lora_target_modules'], help="Modules where LoRA will adapt")
+    parser.add_argument('--lora_target_layers', type=str, default=qlora_config['lora_target_layers'], help="Layers where LoRA will adapt: all, odd, even")
 
     # general config
     parser.add_argument('--project_name', type=str, default=general_config['project_name'], help="WandB project name")
