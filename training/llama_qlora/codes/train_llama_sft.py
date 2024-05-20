@@ -44,7 +44,8 @@ from accelerate import Accelerator
 sys.path.append('../../')
 from training_utils import set_seed
 from argument import load_yaml_config, parse_arguments_llama
-from data_collator import CustomDataCollatorForCompletionOnlyLM
+from trainer import SFTTrainerWithEosToken
+from data_collator import Llama2DataCollatorForCompletionOnlyLM, Llama3DataCollatorForCompletionOnlyLM
 sys.path.append('../../../../') # Use your own path
 from custom_utils.general_secret import WANDB_CLIENT_KEY # Use your own path
 
@@ -55,7 +56,7 @@ LANG_TABLE = {
 }
 
 
-def load_model_and_tokenizer(plm_name, device_map, max_length, use_gradient_checkpointing, bnb_config, lora_config):
+def load_model_and_tokenizer(args):
     """
     Load the model and tokenizer with the specified configuration
 
@@ -71,8 +72,19 @@ def load_model_and_tokenizer(plm_name, device_map, max_length, use_gradient_chec
     - model (PreTrainedModel): The model
     - tokenizer (PreTrainedTokenizer): The tokenizer
     """
+    compute_dtype = getattr(torch, args.bnb_4bit_compute_dtype)
+    bnb_config = BitsAndBytesConfig(
+        load_in_4bit=args.use_4bit,
+        bnb_4bit_quant_type=args.bnb_4bit_quant_type,
+        bnb_4bit_compute_dtype=compute_dtype,
+        bnb_4bit_use_double_quant=args.use_double_quant
+    )
+
+    device_index = Accelerator().process_index
+    device_map = {"": device_index}
+
     model = AutoModelForCausalLM.from_pretrained(
-        plm_name,
+        args.plm_name,
         quantization_config=bnb_config,
         torch_dtype=bnb_config.bnb_4bit_compute_dtype,
         attn_implementation='flash_attention_2',
@@ -80,17 +92,37 @@ def load_model_and_tokenizer(plm_name, device_map, max_length, use_gradient_chec
     )
     model.config.use_cache = False
     model.config.pretraining_tp = 1
-    model.config.pad_token_id = 2
-    model.config.eos_token_id = 46332
 
-    tokenizer = AutoTokenizer.from_pretrained(plm_name, trust_remote_code=True)
-    tokenizer.pad_token = "</s>"
-    tokenizer.pad_token_id = 2
-    tokenizer.eos_token = "<|endoftext|>"
-    tokenizer.eos_token_id = 46332
+    modules = args.lora_target_modules
+    print("LoRA adapted modules:", modules)
+    print("LoRA target layers:", args.lora_target_layers.upper())
+    if args.lora_target_layers == 'all':
+        target_layer_indices = [i for i in range(len(model.model.layers))]
+    elif args.lora_target_layers == 'odd':
+        target_layer_indices = [i for i in range(len(model.model.layers)) if i % 2 == 1]
+    elif args.lora_target_layers == 'even':
+        target_layer_indices = [i for i in range(len(model.model.layers)) if i % 2 == 0]
+    
+    lora_config = LoraConfig(
+        lora_alpha=args.lora_alpha,
+        lora_dropout=args.lora_dropout,
+        r=args.lora_r,
+        bias='none',
+        target_modules=modules,
+        task_type='CAUSAL_LM',
+        layers_to_transform=target_layer_indices,
+    )
+
+    tokenizer = AutoTokenizer.from_pretrained(args.plm_name, trust_remote_code=True)
+    tokenizer.eos_token_id = args.eos_token_id
+    tokenizer.pad_token_id = args.pad_token_id
+    print(f"PAD token: {tokenizer.pad_token}")
+    print(f"PAD token id: {tokenizer.pad_token_id}")
+    print(f"EOS token: {tokenizer.eos_token}")
+    print(f"EOS token id: {tokenizer.eos_token_id}")
     tokenizer.add_eos_token = True
     tokenizer.padding_side = 'right'
-    tokenizer.model_max_length = max_length
+    tokenizer.model_max_length = args.max_length
 
     src_token, tgt_token = "<|src|>", "<|tgt|>"
     tokenizer.add_tokens([src_token, tgt_token])
@@ -106,7 +138,7 @@ def load_model_and_tokenizer(plm_name, device_map, max_length, use_gradient_chec
 
     model = prepare_model_for_kbit_training(
         model, 
-        use_gradient_checkpointing=use_gradient_checkpointing,
+        use_gradient_checkpointing=args.gradient_checkpointing,
         gradient_checkpointing_kwargs={"use_reentrant": True}
     )
     model = get_peft_model(model, lora_config)
@@ -163,7 +195,7 @@ def drop_long_texts(dataset, tokenizer, max_length=512):
             text,
             padding=False,
             truncation=True,
-            max_length=max_length+1,
+            max_length=max_length,
             return_tensors='pt',
             return_attention_mask=False,
             return_length=False
@@ -181,13 +213,13 @@ def drop_long_texts(dataset, tokenizer, max_length=512):
     return dataset_dropped
 
 
-def map_bidirectional(dataset):
+def map_bidirectional(dataset, ko_col='ko', en_col='en'):
     mapped_dataset = {}
     for split in dataset.keys():
         split_dataset = defaultdict(list)
         tqdm_iterator = tqdm(
-            zip(dataset[split]['ko_ref'], dataset[split]['en_ref']),
-            total=len(dataset[split]['ko_ref']), 
+            zip(dataset[split][ko_col], dataset[split][en_col]),
+            total=len(dataset[split][ko_col]), 
             desc=f"Mapping {split} split"
         )
         for ko, en in tqdm_iterator:
@@ -219,40 +251,14 @@ def train(args):
     """
     set_seed(args.seed)
 
-    compute_dtype = getattr(torch, args.bnb_4bit_compute_dtype)
-    bnb_config = BitsAndBytesConfig(
-        load_in_4bit=args.use_4bit,
-        bnb_4bit_quant_type=args.bnb_4bit_quant_type,
-        bnb_4bit_compute_dtype=compute_dtype,
-        bnb_4bit_use_double_quant=args.use_double_quant
-    )
-    modules = args.lora_target_modules
-    print("LoRA adapted modules:", modules)
-    lora_config = LoraConfig(
-        lora_alpha=args.lora_alpha,
-        lora_dropout=args.lora_dropout,
-        r=args.lora_r,
-        bias='none',
-        target_modules=modules,
-        task_type='CAUSAL_LM'
-    )
+    model, tokenizer = load_model_and_tokenizer(args)
 
-    device_index = Accelerator().process_index
-    device_map = {"": device_index}
+    train_dataset = load_dataset(args.train_dataset_name)
+    eval_dataset = load_dataset(args.eval_dataset_name)
+    train_dataset = map_bidirectional(train_dataset, ko_col=args.ko_col, en_col=args.en_col)
+    eval_dataset = map_bidirectional(eval_dataset, ko_col='ko_ref', en_col='en_ref')
 
-    model, tokenizer = load_model_and_tokenizer(
-        plm_name=args.plm_name, 
-        device_map=device_map, 
-        max_length=args.max_length, 
-        use_gradient_checkpointing=args.gradient_checkpointing,
-        bnb_config=bnb_config, 
-        lora_config=lora_config
-    )
-
-    dataset = load_dataset(args.dataset_name)
-    dataset = map_bidirectional(dataset)
-
-    dataset_size = len(dataset['train'])
+    dataset_size = len(train_dataset['train'])
     warmup_steps = calculate_warmup_steps(
         epochs=args.num_epochs,
         dataset_size=dataset_size,
@@ -267,16 +273,16 @@ def train(args):
         logging_steps = 1
         eval_steps = 1
         save_steps = 1
-        train_dataset = dataset['train'].select(range(1000))
-        eval_dataset = dataset['validation'].select(range(10))
+        train_dataset = train_dataset['train'].select(range(1000))
+        eval_dataset = eval_dataset['validation'].select(range(10))
     else:
         project_name = args.project_name
         output_dir = args.output_dir
         logging_steps = min(25, warmup_steps // 10)
         eval_steps = warmup_steps
         save_steps = warmup_steps
-        train_dataset = drop_long_texts(dataset['train'], tokenizer)
-        eval_dataset = drop_long_texts(dataset['validation'], tokenizer)
+        train_dataset = drop_long_texts(train_dataset['train'], tokenizer, max_length=args.max_length)
+        eval_dataset = drop_long_texts(eval_dataset['validation'], tokenizer, max_length=args.max_length)
 
     wandb.login(
         anonymous='never',
@@ -317,15 +323,7 @@ def train(args):
         include_inputs_for_metrics=True,
     )
 
-    data_collator=CustomDataCollatorForCompletionOnlyLM(
-        instruction_template=f"{args.instruction}\n{args.suffix_src}",
-        response_template=f"\n{args.suffix_tgt}",
-        tokenizer=tokenizer, 
-        lang_table=LANG_TABLE,
-        mlm=False
-    )
 
-    
     def formatting_func(example):
         output_texts = []
         for src_text, tgt_text, direction in zip(example['src'], example['tgt'], example['direction']):
@@ -377,23 +375,27 @@ def train(args):
             )[2].mean().item() * 100
         
         IGNORE_INDEX = -100
-
         preds, labels, inputs = p.predictions[0], p.label_ids, p.inputs
 
         first_non_ignore_indices = np.argmax(labels != IGNORE_INDEX, axis=1)
-        for i, idx in enumerate(first_non_ignore_indices):
-            preds[i, :idx-1] = tokenizer.pad_token_id
+        eos_token_indices = np.where(preds == tokenizer.eos_token_id)[1]
+        for i, (non_ignore_idx, eos_token_idx) in enumerate(zip(first_non_ignore_indices, eos_token_indices)):
+            preds[i, :non_ignore_idx-1] = tokenizer.pad_token_id
+            preds[i, eos_token_idx+1:] = tokenizer.pad_token_id
         preds[preds == IGNORE_INDEX] = tokenizer.pad_token_id
         labels = np.where(labels != IGNORE_INDEX, labels, tokenizer.pad_token_id)
 
         decoded_labels = tokenizer.batch_decode(labels, skip_special_tokens=True)
+        decoded_labels = [label.strip() for label in decoded_labels]
         decoded_preds = tokenizer.batch_decode(preds, skip_special_tokens=True)
+        decoded_preds = [pred.strip() for pred in decoded_preds]
 
         signs = []
         for input_id in inputs:
             lang_start_idxs = {}
             for lang in LANG_TABLE.keys():
-                lang_encoding = np.array(tokenizer.encode(LANG_TABLE[lang], add_special_tokens=False))
+                lang_word = f' {LANG_TABLE[lang]}' if 'llama-3' in args.plm_name.lower() else f'{LANG_TABLE[lang]}'
+                lang_encoding = np.array(tokenizer.encode(lang_word, add_special_tokens=False))
                 lang_idx = find_start_idx_window(input_id, lang_encoding)
                 lang_start_idxs[lang] = lang_idx
                 if len(lang_start_idxs.keys()) == 2:
@@ -417,6 +419,7 @@ def train(args):
             print(decoded_label)
             print("[PREDICTION]")
             print(decoded_pred)
+            print()
 
         sacrebleu_scores = {
             metrics_result_key('sacrebleu', key): compute_sacrebleu(decodings, key) for key in decodings.keys() if 'pred' in key
@@ -430,7 +433,23 @@ def train(args):
         }
         return result
 
-    trainer = SFTTrainer(
+
+    if 'llama-3' in args.plm_name.lower():
+        data_collator_cls = Llama3DataCollatorForCompletionOnlyLM
+    elif 'llama-2' in args.plm_name.lower():
+        data_collator_cls = Llama2DataCollatorForCompletionOnlyLM
+    else:
+        raise ValueError("Unknown PLM name")
+
+    data_collator = data_collator_cls(
+        instruction_template=f"{args.instruction}\n{args.suffix_src}",
+        response_template=f"\n{args.suffix_tgt}",
+        tokenizer=tokenizer, 
+        lang_table=LANG_TABLE,
+        mlm=False
+    )
+
+    trainer = SFTTrainerWithEosToken(
         model=model,
         tokenizer=tokenizer,
         train_dataset=train_dataset,
@@ -456,6 +475,5 @@ if __name__ == '__main__':
     args.per_device_batch_size = acc_config['deepspeed_config']['train_micro_batch_size_per_gpu']
     args.gradient_accumulation_steps = acc_config['deepspeed_config']['gradient_accumulation_steps']
     args.max_grad_norm = acc_config['deepspeed_config']['gradient_clipping']
-    args.dataloader_num_workers = acc_config['num_processes']
 
     train(args)
