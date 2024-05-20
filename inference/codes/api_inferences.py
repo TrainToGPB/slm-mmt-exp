@@ -40,13 +40,11 @@ import pandas as pd
 # custom
 sys.path.append('./')
 from api_secret import (
-    PAPAGO_CLIENT_ID_0, 
-    PAPAGO_CLIENT_SECRET_0,
+    PAPAGO_CLIENT_ID, 
+    PAPAGO_CLIENT_SECRET,
 )
 from api_secret import (
-    DEEPL_CLIENT_KEY_0,
-    DEEPL_CLIENT_KEY_1,
-    DEEPL_CLIENT_KEY_2,
+    DEEPL_CLIENT_KEY,
 )
 
 
@@ -148,7 +146,7 @@ def translate_single_text(text, translator='google'):
     return translation
 
 
-def papago_translate_df(df, client_id=PAPAGO_CLIENT_ID_0, client_secret=PAPAGO_CLIENT_SECRET_0, print_result=True):
+def papago_translate_df(df, client_id=PAPAGO_CLIENT_ID, client_secret=PAPAGO_CLIENT_SECRET, print_result=True):
     """
     Translates the 'en' column of a DataFrame using the Papago Translator API.
 
@@ -295,7 +293,7 @@ def google_translate_df(df, print_result=True):
     return df
 
 
-def deepl_translate_df(df, client_key=DEEPL_CLIENT_KEY_0, print_result=True):
+def deepl_translate_df(df, client_key=DEEPL_CLIENT_KEY, src_col='src', tgt_lang='ko', print_result=True):
     """
     Translates the source column of a DataFrame using the DeepL API.
 
@@ -327,16 +325,10 @@ def deepl_translate_df(df, client_key=DEEPL_CLIENT_KEY_0, print_result=True):
 
     tqdm_iterator = tqdm(df.iloc[start_idx:].iterrows(), total=len(df) - start_idx, desc='DeepL translating')
     for _, row in tqdm_iterator:
-        if 'src' in df.columns:
-            text = row['src']
-        else:
-            text = row['en']
+        text = row[src_col] if not pd.isna(row[src_col]) else '<|empty_word|>'
         if 'direction' in df.columns:
             _, tgt_lang = row['direction'].split('-')
             src_col = 'src'
-        else:
-            _, tgt_lang = 'en', 'ko'
-            src_col = 'en'
 
         if error_occurred:
             print(f"Error Occured - DeepL:\n{error_message}")
@@ -412,36 +404,27 @@ def main():
         'flores': '../results/test_flores_inferenced.csv',
         'sparta': '../results/test_sparta_bidir_inferenced.csv',
         'sample': '../results/sample.csv',
+        'ko_words': '../results/ko_5.8k.csv',
+        'en_words': '../results/en_10k.csv',
     }
     file_path = file_path_dict[args.dataset]
 
-    # # google
-    # eval_df = pd.read_csv(file_path)
-    # eval_df = translate_df(eval_df, translator='google', print_result=True)
-    # eval_df.to_csv(file_path, index=False)
-
     # papago
     papago_client_ids = [
-        PAPAGO_CLIENT_ID_0, # 세형
+        PAPAGO_CLIENT_ID, # 세형
     ]
     papago_client_secrets = [
-        PAPAGO_CLIENT_SECRET_0, # 세형
+        PAPAGO_CLIENT_SECRET, # 세형
+    ]
+
+    # deepl
+    deepl_client_keys = [
+        DEEPL_CLIENT_KEY, # 세형
     ]
     eval_df = pd.read_csv(file_path)
-    for client_id, client_secret in zip(papago_client_ids, papago_client_secrets):
-        eval_df = translate_df(eval_df, translator='papago', client_id=client_id, client_secret=client_secret, print_result=True)
+    for client_key in deepl_client_keys:
+        eval_df = translate_df(eval_df, translator=args.translator, client_key=client_key, src_col='en', tgt_lang='ko', print_result=True)
         eval_df.to_csv(file_path, index=False)
-
-    # # deepl
-    # deepl_client_keys = [
-    #     # DEEPL_CLIENT_KEY_0, # 세형
-    #     # DEEPL_CLIENT_KEY_1, # 성환님
-    #     DEEPL_CLIENT_KEY_2, # 현경님
-    # ]
-    # eval_df = pd.read_csv(file_path)
-    # for client_key in deepl_client_keys:
-    #     eval_df = translate_df(eval_df, translator='deepl', client_key=client_key, print_result=True)
-    #     eval_df.to_csv(file_path, index=False)
 
 
 if __name__ == '__main__':
