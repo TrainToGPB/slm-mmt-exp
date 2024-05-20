@@ -19,7 +19,7 @@ Notes:
 """
 # built-in
 import os
-os.environ['CUDA_VISIBLE_DEVICES'] = '2'
+os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 import gc
 import json
 import copy
@@ -32,6 +32,7 @@ from peft import PeftModel
 from peft.utils import _get_submodules
 import bitsandbytes as bnb
 from bitsandbytes.functional import dequantize_4bit
+from transformers import AutoModelForCausalLM, AutoTokenizer
 from transformers import LlamaForCausalLM, LlamaTokenizer, BitsAndBytesConfig
 
 
@@ -130,14 +131,14 @@ def dequantize_and_save(
     try:
         print(f"Starting to load the model {model_path} into memory")
 
-        model = LlamaForCausalLM.from_pretrained(
+        model = AutoModelForCausalLM.from_pretrained(
             model_path,
             torch_dtype=torch.bfloat16,
             quantization_config=quantization_config,
             device_map=torch.cuda.current_device()
         )
         print(model)
-        tokenizer = LlamaTokenizer.from_pretrained(model_path)
+        tokenizer = AutoTokenizer.from_pretrained(model_path)
         
         model = dequantize_model(
             model, 
@@ -194,12 +195,23 @@ def convert_bf16_to_fp16(model_path, save_path):
 
 
 if __name__ == '__main__':
-    model_path = 'beomi/open-llama-2-ko-7b'
-    adapter_path = '../models/baseline-sparta'
-    save_dequant_plm_path = '../models/open-llama-2-ko-7b-bf16-dequant-from-nf4'
-    save_dequant_merged_bf16_path = '../models/baseline-sparta-merged-bf16'
+    model_path = 'beomi/Llama-3-Open-Ko-8B' # KoEn의 경우: beomi/Llama-3-KoEn-8B-preview
+    adapter_paths = [
+        '../models/llama3-koen-sparta',
+        # '../models/llama3-ko-sparta-odd',
+        # '../models/llama3-ko-tiny',
+        # '../models/llama3-ko-mini',
+    ]
+    save_dequant_plm_path = '../models/open-llama-3-ko-8b-bf16-dequant-from-nf4' # KoEn의 경우: open-llama-3-koen-8b-bf16-dequant-from-nf4
+    save_dequant_merged_bf16_paths = [
+        '../models/llama3-koen-sparta-merged-bf16',
+        # '../models/llama3-ko-sparta-odd-merged-bf16',
+        # '../models/llama3-ko-tiny-merged-bf16',
+        # '../models/llama3-ko-mini-merged-bf16',
+    ]
 
-    dequantize_and_save(model_path, adapter_path, save_dequant_plm_path, save_dequant_merged_bf16_path)
+    for adapter_path, save_dequant_merged_bf16_path in zip(adapter_paths, save_dequant_merged_bf16_paths):
+        dequantize_and_save(model_path, adapter_path, save_dequant_plm_path, save_dequant_merged_bf16_path)
 
     # convert_bf16_to_fp16(save_dequant_merged_bf16_path, save_dequant_merged_fp16_path)
     
