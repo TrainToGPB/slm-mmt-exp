@@ -51,6 +51,7 @@ import torch
 import pandas as pd
 from peft import PeftModel
 from vllm import LLM, SamplingParams
+from transformers import AutoModelForCausalLM, AutoTokenizer
 from transformers import LlamaForCausalLM, LlamaTokenizer
 from transformers import MarianMTModel, MarianTokenizer
 from transformers import MBartForConditionalGeneration, MBart50Tokenizer
@@ -71,6 +72,7 @@ LANG_TABLE = {
 SEED = 42
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print("DEVICE:", DEVICE)
+TENSOR_PARALLEL_SIZE = 1
 
 
 def load_model_and_tokenizer(model_type):
@@ -93,21 +95,28 @@ def load_model_and_tokenizer(model_type):
         'madlad': ('google/madlad400-3b-mt', T5ForConditionalGeneration, T5Tokenizer),
         'mbart-aihub': (os.path.join(SCRIPT_DIR, '../../training/mbart/models/mbart-full'), MBartForConditionalGeneration, MBart50Tokenizer),
         'llama': ('beomi/open-llama-2-ko-7b', LlamaForCausalLM, LlamaTokenizer),
-        'llama-aihub-qlora': (('beomi/open-llama-2-ko-7b', 'traintogpb/llama-2-en2ko-translator-7b-qlora-adapter'), LlamaForCausalLM, LlamaTokenizer),
-        'llama-aihub-qlora-bf16': ('traintogpb/llama-2-en2ko-translator-7b-qlora-bf16-upscaled', LlamaForCausalLM, LlamaTokenizer),
-        'llama-aihub-qlora-fp16': (os.path.join(SCRIPT_DIR, '../../training/llama_qlora/models/baseline-merged-fp16'), LlamaForCausalLM, LlamaTokenizer),
-        'llama-aihub-qlora-bf16-vllm': ('traintogpb/llama-2-en2ko-translator-7b-qlora-bf16-upscaled', None, LlamaTokenizer),
-        'llama-aihub-qlora-augment': (('beomi/open-llama-2-ko-7b', os.path.join(SCRIPT_DIR, '../../training/llama_qlora/models/augment')), LlamaForCausalLM, LlamaTokenizer),
-        'llama-aihub-qlora-reverse-new': (('beomi/open-llama-2-ko-7b', os.path.join(SCRIPT_DIR, '../../training/llama_qlora/models/continuous-reverse-new')), LlamaForCausalLM, LlamaTokenizer),
-        'llama-aihub-qlora-reverse-overlap': (('beomi/open-llama-2-ko-7b', os.path.join(SCRIPT_DIR, '../../training/llama_qlora/models/continuous-reverse-overlap')), LlamaForCausalLM, LlamaTokenizer),
+        'llama-2-ko-tiny-qlora': (('beomi/open-llama-2-ko-7b', 'traintogpb/llama-2-en2ko-translator-7b-qlora-adapter'), LlamaForCausalLM, LlamaTokenizer),
+        'llama-2-ko-tiny-qlora-bf16': ('traintogpb/llama-2-en2ko-translator-7b-qlora-bf16-upscaled', LlamaForCausalLM, LlamaTokenizer),
+        'llama-2-ko-tiny-qlora-fp16': (os.path.join(SCRIPT_DIR, '../../training/llama_qlora/models/baseline-merged-fp16'), LlamaForCausalLM, LlamaTokenizer),
+        'llama-2-ko-tiny-qlora-bf16-vllm': ('traintogpb/llama-2-en2ko-translator-7b-qlora-bf16-upscaled', None, LlamaTokenizer),
+        'llama-2-ko-tiny-qlora-augment': (('beomi/open-llama-2-ko-7b', os.path.join(SCRIPT_DIR, '../../training/llama_qlora/models/augment')), LlamaForCausalLM, LlamaTokenizer),
+        'llama-2-ko-tiny-qlora-reverse-new': (('beomi/open-llama-2-ko-7b', os.path.join(SCRIPT_DIR, '../../training/llama_qlora/models/continuous-reverse-new')), LlamaForCausalLM, LlamaTokenizer),
+        'llama-2-ko-tiny-qlora-reverse-overlap': (('beomi/open-llama-2-ko-7b', os.path.join(SCRIPT_DIR, '../../training/llama_qlora/models/continuous-reverse-overlap')), LlamaForCausalLM, LlamaTokenizer),
         'madlad-aihub-7b-bt-qlora': (('google/madlad400-7b-mt-bt', os.path.join(SCRIPT_DIR, '../../training/madlad/models/7b-bt-en2ko')), T5ForConditionalGeneration, T5Tokenizer),
         'mt5-aihub-base-fft': (os.path.join(SCRIPT_DIR, '../../training/mt5/models/base-fft-en2ko-separate-token-constlr-70epoch'), MT5ForConditionalGeneration, T5Tokenizer),
         # alma-qlora-dpo 모델 정상 사용 불가: lora_A 가중치 비어있음
         'alma-qlora-dpo-policy': (('haoranxu/ALMA-7B-Pretrain', os.path.join(SCRIPT_DIR, '../../training/llama_qlora/models/alma-dpo/policy')), LlamaForCausalLM, LlamaTokenizer),
         'alma-qlora-dpo-reference': (('haoranxu/ALMA-7B-Pretrain', os.path.join(SCRIPT_DIR, '../../training/llama_qlora/models/alma-dpo/reference')), LlamaForCausalLM, LlamaTokenizer),
-        'llama-sparta-qlora': (('beomi/open-llama-2-ko-7b', 'traintogpb/llama-2-enko-translator-7b-qlora-adapter'), LlamaForCausalLM, LlamaTokenizer),
-        'llama-sparta-qlora-bf16': ('traintogpb/llama-2-enko-translator-7b-qlora-bf16-upscaled', LlamaForCausalLM, LlamaTokenizer),
-        'llama-sparta-qlora-bf16-vllm': ('traintogpb/llama-2-enko-translator-7b-qlora-bf16-upscaled', None, LlamaTokenizer),
+        'llama-2-ko-sparta-qlora': (('beomi/open-llama-2-ko-7b', 'traintogpb/llama-2-enko-translator-7b-qlora-adapter'), LlamaForCausalLM, LlamaTokenizer),
+        'llama-2-ko-sparta-qlora-bf16': ('traintogpb/llama-2-enko-translator-7b-qlora-bf16-upscaled', LlamaForCausalLM, LlamaTokenizer),
+        'llama-2-ko-sparta-qlora-bf16-vllm': ('traintogpb/llama-2-enko-translator-7b-qlora-bf16-upscaled', None, LlamaTokenizer),
+        'llama-3-ko-sparta-qlora': (('beomi/Llama-3-Open-Ko-8B', os.path.join(SCRIPT_DIR, '../../training/llama_qlora/models/llama3-sparta')), AutoModelForCausalLM, AutoTokenizer),
+        'llama-3-ko-sparta-qlora-bf16': (os.path.join(SCRIPT_DIR, '../../training/llama_qlora/models/llama3-sparta-merged-bf16'), AutoModelForCausalLM, AutoTokenizer),
+        'llama-3-ko-sparta-qlora-bf16-vllm': (os.path.join(SCRIPT_DIR, '../../training/llama_qlora/models/llama3-sparta-merged-bf16'), None, AutoTokenizer),
+        'llama-3-ko-sparta-odd-qlora-bf16-vllm': (os.path.join(SCRIPT_DIR, '../../training/llama_qlora/models/llama3-ko-sparta-odd-merged-bf16'), None, AutoTokenizer),
+        'llama-3-koen-sparta-qlora-bf16-vllm': (os.path.join(SCRIPT_DIR, '../../training/llama_qlora/models/llama3-koen-sparta-merged-bf16'), None, AutoTokenizer),
+        'llama-3-ko-tiny-qlora-bf16-vllm': (os.path.join(SCRIPT_DIR, '../../training/llama_qlora/models/llama3-ko-tiny-merged-bf16'), None, AutoTokenizer),
+        'llama-3-ko-mini-qlora-bf16-vllm': (os.path.join(SCRIPT_DIR, '../../training/llama_qlora/models/llama3-ko-mini-merged-bf16'), None, AutoTokenizer),
     }
     assert model_type in model_mapping.keys(), 'Wrong model type'
 
@@ -120,7 +129,7 @@ def load_model_and_tokenizer(model_type):
     if 'qlora' in model_type:
         if '16' in model_type:
             if model_type.endswith('vllm'):
-                model = LLM(model=model_name, seed=SEED, dtype=torch.bfloat16, tensor_parallel_size=1)
+                model = LLM(model=model_name, seed=SEED, dtype=torch.bfloat16, tensor_parallel_size=TENSOR_PARALLEL_SIZE)
             else:
                 if model_type.endswith('bf16'):
                     model = model_cls.from_pretrained(model_name, torch_dtype=torch.bfloat16)
@@ -152,13 +161,15 @@ def load_model_and_tokenizer(model_type):
 
     tokenizer = tokenizer_cls.from_pretrained(model_name)
     if model_type.startswith('llama'):
-        tokenizer.pad_token = "</s>"
-        tokenizer.pad_token_id = 2
-        tokenizer.eos_token = "<|endoftext|>"
-        tokenizer.eos_token_id = 46332
-        tokenizer.add_eos_token = True
-        tokenizer.padding_side = 'right'
+        if '3' in model_type:
+            tokenizer.pad_token_id = 128002
+        else:
+            tokenizer.pad_token = "</s>"
+            tokenizer.pad_token_id = 2
+            tokenizer.eos_token = "<|endoftext|>"
+            tokenizer.eos_token_id = 46332
         tokenizer.model_max_length = 768
+        tokenizer.add_eos_token = True
     elif model_type.startswith('alma'):
         tokenizer.eos_token = "</s>"
         tokenizer.eos_token_id = 2
@@ -241,9 +252,10 @@ def translate(model, tokenizer, text, model_type, src_lang=None, tgt_lang=None, 
         translated_text = outputs[0].outputs[0].text
     else:
         if (model_type.startswith('llama') and 'qlora' in model_type) or model_type.startswith('alma'):
+            eos_token_id = 128001 if '3' in model_type else 46332
             inputs['input_ids'] = inputs['input_ids'][0][:-1].unsqueeze(dim=0)
             inputs['attention_mask'] = inputs['attention_mask'][0][:-1].unsqueeze(dim=0)
-            outputs = model.generate(**inputs, max_length=max_length, eos_token_id=46332)
+            outputs = model.generate(**inputs, max_length=max_length, eos_token_id=eos_token_id)
         elif model_type.startswith('madlad'):
             inputs['input_ids'] = inputs['input_ids'][0][1:].unsqueeze(dim=0)
             inputs['attention_mask'] = inputs['attention_mask'][0][1:].unsqueeze(dim=0)
@@ -367,6 +379,7 @@ if __name__ == '__main__':
     parser.add_argument("--sentence", type=str, default="NMIXX is a South Korean girl group that made a comeback on January 15, 2024 with their new song 'DASH'.", help="Input English text for inference (only for sentence inference)")
     parser.add_argument("--src_lang", type=str, default="en", help="Source language code (just for sentence translation; default: en)")
     parser.add_argument("--tgt_lang", type=str, default="ko", help="Target language code (just for sentence translation; default: ko)")
+    parser.add_argument("--print_result", action="store_true", help="Print the translated text")
     args = parser.parse_args()
     dataset = args.dataset
     
@@ -386,16 +399,23 @@ if __name__ == '__main__':
         'mbart': 'mbart',
         'nllb': 'nllb-600m',
         'madlad': 'madlad',
-        'llama-qlora': 'llama-aihub-qlora',
-        'llama-bf16': 'llama-aihub-qlora-bf16',
-        'llama-vllm': 'llama-aihub-qlora-bf16-vllm',
         'madlad-qlora': 'madlad-aihub-7b-bt-qlora',
         'mt5-fft': 'mt5-aihub-base-fft',
         'alma-pol': 'alma-qlora-dpo-policy',
         'alma-ref': 'alma-qlora-dpo-reference',
-        'llama-sparta-qlora': 'llama-sparta-qlora',
-        'llama-sparta-bf16': 'llama-sparta-qlora-bf16',
-        'llama-sparta-vllm': 'llama-sparta-qlora-bf16-vllm',
+        'llama-2-qlora': 'llama-2-ko-tiny-qlora',
+        'llama-2-bf16': 'llama-2-ko-tiny-qlora-bf16',
+        'llama-2-vllm': 'llama-2-ko-tiny-qlora-bf16-vllm',
+        'llama-2-sparta-qlora': 'llama-2-ko-sparta-qlora',
+        'llama-2-sparta-bf16': 'llama-2-ko-sparta-qlora-bf16',
+        'llama-2-sparta-vllm': 'llama-2-ko-sparta-qlora-bf16-vllm',
+        'llama-3-sparta-qlora': 'llama-3-ko-sparta-qlora',
+        'llama-3-sparta-bf16': 'llama-3-ko-sparta-qlora-bf16',
+        'llama-3-sparta-vllm': 'llama-3-ko-sparta-qlora-bf16-vllm',
+        'llama-3-koen-sparta-vllm': 'llama-3-koen-sparta-qlora-bf16-vllm',
+        'llama-3-sparta-odd-vllm': 'llama-3-ko-sparta-odd-qlora-bf16-vllm',
+        'llama-3-tiny-vllm': 'llama-3-ko-tiny-qlora-bf16-vllm',
+        'llama-3-mini-vllm': 'llama-3-ko-mini-qlora-bf16-vllm',
     }
     
     model_type = model_type_dict[args.model_type]
@@ -410,7 +430,7 @@ if __name__ == '__main__':
 
     if args.inference_type == 'dataset':
         source_column = "src" if any(args.dataset.startswith(bidir_data) for bidir_data in ['sparta', 'sample', 'dpo']) else "en"
-        target_column = model_type + "-tp4_trans"
+        target_column = model_type + f"-tp{TENSOR_PARALLEL_SIZE}_trans" if 'vllm' in model_type else model_type + '_trans'
         inference(
             model_type, 
             model, 
@@ -418,7 +438,7 @@ if __name__ == '__main__':
             source_column, 
             target_column, 
             file_path, 
-            print_result=True
+            print_result=args.print_result,
         )
     
     if args.inference_type == 'sentence':
@@ -428,6 +448,6 @@ if __name__ == '__main__':
             tokenizer,
             args.sentence, 
             args.src_lang, 
-            args.tgt_lang
+            args.tgt_lang,
         )
         print(f"Translation: {translation}")
