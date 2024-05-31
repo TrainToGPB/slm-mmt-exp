@@ -214,24 +214,41 @@ def drop_long_texts(dataset, tokenizer, max_length=512):
 
 
 def map_bidirectional(dataset, ko_col='ko', en_col='en'):
-    mapped_dataset = {}
-    for split in dataset.keys():
-        split_dataset = defaultdict(list)
-        tqdm_iterator = tqdm(
-            zip(dataset[split][ko_col], dataset[split][en_col]),
-            total=len(dataset[split][ko_col]), 
-            desc=f"Mapping {split} split"
-        )
-        for ko, en in tqdm_iterator:
-            split_dataset['src'].extend([ko, en])
-            split_dataset['tgt'].extend([en, ko])
-            split_dataset['direction'].extend(['ko-en', 'en-ko'])
-            
-        mapped_dataset[split] = Dataset.from_dict(split_dataset)
-    
-    mapped_dataset = DatasetDict(mapped_dataset)
+    mapped_dataset = defaultdict(list)
+    tqdm_iterator = tqdm(
+        zip(dataset[ko_col], dataset[en_col]),
+        total=len(dataset[ko_col]), 
+        desc=f"Mapping dataset"
+    )
+    for ko, en in tqdm_iterator:
+        mapped_dataset['src'].extend([ko, en])
+        mapped_dataset['tgt'].extend([en, ko])
+        mapped_dataset['direction'].extend(['ko-en', 'en-ko'])
+        
+    mapped_dataset = Dataset.from_dict(mapped_dataset)
 
     return mapped_dataset
+
+
+def add_word_dataset(dataset, word_dataset, word_size=2880):
+    word_dataset = word_dataset.select(range(word_size))
+    dataset_df, word_dataset_df = pd.DataFrame(dataset), pd.DataFrame(word_dataset)
+    word_sources = []
+    for row in word_dataset:
+        if row['src_lang'] == 'ko':
+            word_sources.append('words-ko')
+        elif row['src_lang'] == 'en':
+            word_sources.append('words-en')
+
+    word_dataset_df['src_lang'] = word_sources
+    word_dataset_df['ko_ref_xcomet'] = np.nan
+    word_dataset_df.rename(columns={'src_lang': 'source', 'ko': 'ko_ref', 'en': 'en_ref'}, inplace=True)
+    word_dataset_df = word_dataset_df[['ko_ref_xcomet', 'ko_ref', 'en_ref', 'source']]
+
+    dataset_df = pd.concat([dataset_df, word_dataset_df], axis=0)
+    dataset = Dataset.from_pandas(dataset_df)
+    
+    return dataset
 
 
 def add_special_lang_tokens(tokenizer):
@@ -253,12 +270,20 @@ def train(args):
 
     model, tokenizer = load_model_and_tokenizer(args)
 
-    train_dataset = load_dataset(args.train_dataset_name)
-    eval_dataset = load_dataset(args.eval_dataset_name)
+    if args.mix_word_dataset:
+        train_dataset = load_dataset(args.train_dataset_name)['train']
+        eval_dataset = load_dataset(args.eval_dataset_name)['validation']
+        train_word_dataset = load_dataset(args.train_word_dataset_name)['train']
+        eval_word_dataset = load_dataset(args.eval_word_dataset_name)['validation']
+        train_dataset = add_word_dataset(train_dataset, train_word_dataset, word_size=args.train_word_size)
+        eval_dataset = add_word_dataset(eval_dataset, eval_word_dataset, word_size=len(eval_word_dataset))
+    else:
+        train_dataset = load_dataset(args.train_dataset_name)['train']
+        eval_dataset = load_dataset(args.eval_dataset_name)['validation']
     train_dataset = map_bidirectional(train_dataset, ko_col=args.ko_col, en_col=args.en_col)
-    eval_dataset = map_bidirectional(eval_dataset, ko_col='ko_ref', en_col='en_ref')
+    eval_dataset = map_bidirectional(eval_dataset, ko_col=args.ko_col, en_col=args.en_col)
 
-    dataset_size = len(train_dataset['train'])
+    dataset_size = len(train_dataset)
     warmup_steps = calculate_warmup_steps(
         epochs=args.num_epochs,
         dataset_size=dataset_size,
@@ -266,6 +291,7 @@ def train(args):
         gradient_accumulation_steps=args.gradient_accumulation_steps,
         warmup_ratio=args.warmup_ratio
     )
+    print(f"Warmup steps: {warmup_steps}")
 
     if args.just_test:
         project_name = 'test'
@@ -273,16 +299,16 @@ def train(args):
         logging_steps = 1
         eval_steps = 1
         save_steps = 1
-        train_dataset = train_dataset['train'].select(range(1000))
-        eval_dataset = eval_dataset['validation'].select(range(10))
+        train_dataset = train_dataset.select(range(1000))
+        eval_dataset = eval_dataset.select(range(10))
     else:
         project_name = args.project_name
         output_dir = args.output_dir
-        logging_steps = min(25, warmup_steps // 10)
-        eval_steps = warmup_steps
-        save_steps = warmup_steps
-        train_dataset = drop_long_texts(train_dataset['train'], tokenizer, max_length=args.max_length)
-        eval_dataset = drop_long_texts(eval_dataset['validation'], tokenizer, max_length=args.max_length)
+        logging_steps = min(25, warmup_steps // 10) if warmup_steps > 0 else args.logging_steps
+        eval_steps = warmup_steps if warmup_steps > 0 else args.eval_steps
+        save_steps = warmup_steps if warmup_steps > 0 else args.save_steps
+        train_dataset = drop_long_texts(train_dataset, tokenizer, max_length=args.max_length)
+        eval_dataset = drop_long_texts(eval_dataset, tokenizer, max_length=args.max_length)
 
     wandb.login(
         anonymous='never',
@@ -394,7 +420,9 @@ def train(args):
         for input_id in inputs:
             lang_start_idxs = {}
             for lang in LANG_TABLE.keys():
-                lang_word = f' {LANG_TABLE[lang]}' if 'llama-3' in args.plm_name.lower() else f'{LANG_TABLE[lang]}'
+                lang_word = f'{LANG_TABLE[lang]}'
+                if 'llama-3' in args.plm_name.lower() or 'llama3' in args.plm_name.lower():
+                    lang_word = ' ' + lang_word
                 lang_encoding = np.array(tokenizer.encode(lang_word, add_special_tokens=False))
                 lang_idx = find_start_idx_window(input_id, lang_encoding)
                 lang_start_idxs[lang] = lang_idx
@@ -434,10 +462,12 @@ def train(args):
         return result
 
 
-    if 'llama-3' in args.plm_name.lower():
+    if 'llama-3' in args.plm_name.lower() or 'llama3' in args.plm_name.lower():
         data_collator_cls = Llama3DataCollatorForCompletionOnlyLM
-    elif 'llama-2' in args.plm_name.lower():
+        trainer_cls = SFTTrainerWithEosToken
+    elif 'llama-2' in args.plm_name.lower() or 'llama2' in args.plm_name.lower():
         data_collator_cls = Llama2DataCollatorForCompletionOnlyLM
+        trainer_cls = SFTTrainer
     else:
         raise ValueError("Unknown PLM name")
 
@@ -449,7 +479,7 @@ def train(args):
         mlm=False
     )
 
-    trainer = SFTTrainerWithEosToken(
+    trainer = trainer_cls(
         model=model,
         tokenizer=tokenizer,
         train_dataset=train_dataset,
@@ -463,7 +493,7 @@ def train(args):
         packing=False
     )
     trainer.train()
-    trainer.save_model(args.output_dir)
+    trainer.save_model(output_dir)
 
 
 if __name__ == '__main__':

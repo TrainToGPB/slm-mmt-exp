@@ -120,11 +120,15 @@ def parse_arguments_llama(yaml_path):
     parser.add_argument('--load_best_model_at_end', type=lambda x: (str(x).lower() == 'true'), default=train_config['load_best_model_at_end'], help="Load best model at the end")
     parser.add_argument('--metric_for_best_model', type=str, default=train_config['metric_for_best_model'], help="Metric for best model")
     parser.add_argument('--remove_unused_columns', type=lambda x: (str(x).lower() == 'true'), default=train_config['remove_unused_columns'], help="Remove dataset columns not used in training")
-    parser.add_argument('--just_test', type=lambda x: (str(x).lower() == 'true'), default=train_config['just_test'], help="데이터 적게, 스텝 짧게 테스트 용")
+    parser.add_argument('--mix_word_dataset', type=lambda x: (str(x).lower() == 'true'), default=train_config['mix_word_dataset'], help="Mix word dataset")
+    parser.add_argument('--just_test', action='store_true', help="데이터 적게, 스텝 짧게 테스트 용")
 
     # data config
     parser.add_argument('--train_dataset_name', type=str, default=data_config['train_dataset_name'], help="Train dataset name (from HuggingFace)")
     parser.add_argument('--eval_dataset_name', type=str, default=data_config['eval_dataset_name'], help="Eval dataset name (from HuggingFace)")
+    parser.add_argument('--train_word_dataset_name', type=str, default=data_config['train_word_dataset_name'], help="Train word dataset name (from HuggingFace)")
+    parser.add_argument('--eval_word_dataset_name', type=str, default=data_config['eval_word_dataset_name'], help="Eval word dataset name (from HuggingFace)")
+    parser.add_argument('--train_word_size', type=int, default=data_config['train_word_size'], help="Train word dataset size")
     parser.add_argument('--instruction', type=str, default=data_config['instruction'], help="Training instruction for the model.")
     parser.add_argument('--suffix_src', type=str, default=data_config['suffix_src'], help="Suffix for the prompt in source language")
     parser.add_argument('--suffix_tgt', type=str, default=data_config['suffix_tgt'], help="Suffix for the prompt in target language")
