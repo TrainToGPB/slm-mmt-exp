@@ -180,7 +180,7 @@ aihub-koen-translation-integrated-mini-1m/
 aihub-koen-translation-integrated-tiny-100k/
 aihub-koen-translation-integrated-tiny-100k-2/
 aihub-koen-translation-integrated-tiny-augmented-240k/
-# aihub-flores-koen-integrated-sparta-mini-300k/
+aihub-flores-koen-integrated-sparta-mini-300k/
 111_expertized_fields/
 124_tech_and_science_2/
 125_social_science/
@@ -190,6 +190,9 @@ aihub-koen-translation-integrated-tiny-augmented-240k/
 71266_tech_and_science_1/
 71382_broadcast_contents/
 71475_nmt_quality_assurance/
+*.json.bak.done
+desktop.ini
+aihubshell
 
 # training
 *.sh
