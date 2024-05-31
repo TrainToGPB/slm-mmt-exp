@@ -195,23 +195,16 @@ def convert_bf16_to_fp16(model_path, save_path):
 
 
 if __name__ == '__main__':
-    model_path = 'beomi/Llama-3-Open-Ko-8B' # KoEn의 경우: beomi/Llama-3-KoEn-8B-preview
-    adapter_paths = [
-        '../models/llama3-koen-sparta',
-        # '../models/llama3-ko-sparta-odd',
-        # '../models/llama3-ko-tiny',
-        # '../models/llama3-ko-mini',
-    ]
-    save_dequant_plm_path = '../models/open-llama-3-ko-8b-bf16-dequant-from-nf4' # KoEn의 경우: open-llama-3-koen-8b-bf16-dequant-from-nf4
-    save_dequant_merged_bf16_paths = [
-        '../models/llama3-koen-sparta-merged-bf16',
-        # '../models/llama3-ko-sparta-odd-merged-bf16',
-        # '../models/llama3-ko-tiny-merged-bf16',
-        # '../models/llama3-ko-mini-merged-bf16',
-    ]
+    import argparse
+    
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--model_path", type=str, default=None)
+    parser.add_argument("--adapter_path", type=str, default=None)
+    parser.add_argument("--save_dequant_plm_path", type=str, default=None)
+    parser.add_argument("--save_dequant_merged_bf16_path", type=str, default=None)
+    args = parser.parse_args()
 
-    for adapter_path, save_dequant_merged_bf16_path in zip(adapter_paths, save_dequant_merged_bf16_paths):
-        dequantize_and_save(model_path, adapter_path, save_dequant_plm_path, save_dequant_merged_bf16_path)
+    dequantize_and_save(args.model_path, args.adapter_path, args.save_dequant_plm_path, args.save_dequant_merged_bf16_path)
 
     # convert_bf16_to_fp16(save_dequant_merged_bf16_path, save_dequant_merged_fp16_path)
     
