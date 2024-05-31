@@ -58,7 +58,7 @@ def calculate_xcomet_line_by_line(eval_df, model, tgt_col, src_col='en', ref_col
         triplets.append(triplet)
 
     model_output = model.predict(triplets, batch_size=128, gpus=1)
-    scores = model_output["scores"]
+    scores = model_output["scores"] * 100
     
     return scores
 
@@ -67,8 +67,8 @@ def calculate_speed(eval_df, tgt_col, len_col='src_token_len'):
     tqdm_iterator = tqdm(eval_df.iterrows(), total=len(eval_df), desc="Calculating speed")
     token_per_sec = []
     for _, example in tqdm_iterator:
-        src_len = example[len_col]
-        time = example[tgt_col]
+        src_len = int(example[len_col])
+        time = float(example[tgt_col])
 
         token_per_sec.append(src_len / time)
 
@@ -89,7 +89,7 @@ def calculate_sacrebleu(eval_df, column_name, ref_col='ko'):
     return sacrebleu
 
 
-def calculate_sacrebleu(eval_df, column_name, ref_col='ko'):
+def calculate_sacrebleu_line_by_line(eval_df, column_name, ref_col='ko'):
     metric = evaluate.load('sacrebleu')
 
     references = eval_df[ref_col].tolist()
@@ -110,13 +110,15 @@ def make_eval_dict(results, direction_cols, data_source_cols, save_yaml_path, me
     eval_dict = read_eval_dict_yaml(save_yaml_path)
     for direction in direction_cols:
         src_lang = direction.split('2')[0]
-        source_dict = dict()
+        source_dict = dict() if direction not in eval_dict.keys() else eval_dict[direction]
         for data_source in data_source_cols:
-            score_dict = dict()
+            score_dict = dict() if data_source not in source_dict.keys() else source_dict[data_source]
             for column in results.columns:
-                if 'trans' not in column or 'llama-3' not in column:
+                if metric_type == 'speed' and 'time' not in column:
                     continue
-                if direction in eval_dict and data_source in eval_dict[direction] and column in eval_dict[direction][data_source]:
+                if metric_type != 'speed' and 'trans' not in column:
+                    continue
+                if direction in eval_dict.keys() and data_source in eval_dict[direction].keys() and column in eval_dict[direction][data_source].keys():
                     continue
 
                 target_data = results[results['data_source'].str.startswith(data_source) & results['direction'].str.startswith(src_lang)]
@@ -130,7 +132,7 @@ def make_eval_dict(results, direction_cols, data_source_cols, save_yaml_path, me
                     score_dict[column] = calculate_sacrebleu(target_data, column, 'tgt')
 
             print(score_dict)
-                
+            
             source_dict[data_source] = score_dict
         eval_dict[direction] = source_dict
 
@@ -147,27 +149,33 @@ def save_line_by_line_metrics(eval_df, save_path, metric_type='xcomet', src_col=
         xcomet_model = load_xcomet_model()
 
     for tgt_col in eval_df.columns:
-        # if 'trans' not in tgt_col:
-        #     continue
-        if tgt_col != 'ko':
-            continue
+        if 'train' in save_path:
+            if tgt_col != 'ko':
+                continue
+        else:
+            if 'trans' not in tgt_col:
+                continue
         
         print(f"Calculating {metric_type.upper()} of {tgt_col}...")
 
         if metric_type == 'xcomet':
-            # eval_col = tgt_col.replace('trans', 'xcomet')
-            eval_col = tgt_col + '_xcomet'
+            if 'train' in save_path:
+                eval_col = tgt_col + '_xcomet'
+            else:
+                eval_col = tgt_col.replace('trans', 'xcomet')
             if eval_col in eval_df.columns:
                 continue
-            # xcomet_scores = calculate_xcomet_line_by_line(eval_df, xcomet_model, tgt_col, src_col, ref_col)
-            xcomet_scores = calculate_xcomet_line_by_line(eval_df, xcomet_model, 'ko', src_col)
+            if 'train' not in save_path:
+                xcomet_scores = calculate_xcomet_line_by_line(eval_df, xcomet_model, tgt_col, src_col, ref_col)
+            else:
+                xcomet_scores = calculate_xcomet_line_by_line(eval_df, xcomet_model, 'ko', src_col)
             eval_df.insert(eval_df.columns.get_loc(tgt_col) + 1, eval_col, xcomet_scores)
 
         elif metric_type == 'bleu':
             eval_col = tgt_col.replace('trans', 'bleu')
             if eval_col in eval_df.columns:
                 continue
-            bleu_scores = calculate_sacrebleu(eval_df, tgt_col, ref_col)
+            bleu_scores = calculate_sacrebleu_line_by_line(eval_df, tgt_col, ref_col)
             eval_df.insert(eval_df.columns.get_loc(tgt_col) + 1, eval_col, bleu_scores)
 
     eval_df.to_csv(save_path, index=False)
@@ -178,34 +186,34 @@ def main():
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--results_type', type=str, default='api', help='api, llama2, llama3')
-    parser.add_argument('--inference_type', type=str, default='eval_dict', help='eval_dict, line_by_line, all')
+    parser.add_argument('--eval_type', type=str, default='eval_dict', help='eval_dict, line_by_line, all')
     parser.add_argument('--metric_type', type=str, default='bleu', help='xcomet, bleu, speed')
     args = parser.parse_args()
 
     results_path_dict = {
-        'api': '../results/test_sparta_bidir_api_inferenced.csv',
-        'llama2': '../results/test_sparta_bidir_llama2_inferenced.csv',
-        'llama3': '../results/test_sparta_bidir_llama3_inferenced.csv',
-        'mini-1m-train': '../results/mini-train.csv'
+        'api': '../results/sparta/test_sparta_bidir_api_inferenced.csv',
+        'llama2': '../results/sparta/test_sparta_bidir_llama2_inferenced.csv',
+        'llama3': '../results/sparta/test_sparta_bidir_llama3_inferenced.csv',
+        'mini-1m-train': '../results/others/mini-train.csv'
     }
     results_path = results_path_dict[args.results_type]
     results = pd.read_csv(results_path)
 
-    if args.inference_type == 'eval_dict':
+    if args.eval_type == 'eval_dict':
         direction_cols = ['en2ko', 'ko2en']
         data_source_cols = ['aihub', 'flores']
 
-        save_path = results_path_dict.replace('inferenced', f'{args.metric_type}').replace('.csv', '.yaml')
+        save_path = results_path.replace('inferenced', f'{args.metric_type}').replace('.csv', '.yaml')
         make_eval_dict(results, direction_cols, data_source_cols, save_path, metric_type=args.metric_type, print_dict=True)
 
-    elif args.inference_type == 'line_by_line':
-        save_line_by_line_metrics(results, save_path=results_path, metric_type=args.metric_type, src_col='en', ref_col=None)
+    elif args.eval_type == 'line_by_line':
+        save_line_by_line_metrics(results, save_path=results_path, metric_type=args.metric_type, src_col='src', ref_col='tgt')
 
-    elif args.inference_type == 'all':
+    elif args.eval_type == 'all':
         direction_cols = ['en2ko', 'ko2en']
         data_source_cols = ['aihub', 'flores']
 
-        save_path = results_path_dict.replace('inferenced', f'{args.metric_type}').replace('.csv', '.yaml')
+        save_path = results_path.replace('inferenced', f'{args.metric_type}').replace('.csv', '.yaml')
         make_eval_dict(results, direction_cols, data_source_cols, save_path, metric_type=args.metric_type, print_dict=True)
 
         save_line_by_line_metrics(results, save_path=results_path, metric_type=args.metric_type)
