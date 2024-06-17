@@ -37,7 +37,7 @@ def calculate_xcomet(eval_df, model, tgt_col, src_col='en', ref_col='ko'):
         triplet = {"src": src_text, "mt": tgt_text, "ref": ref_text}
         triplets.append(triplet)
 
-    model_output = model.predict(triplets, batch_size=128, gpus=1)
+    model_output = model.predict(triplets, batch_size=256, gpus=1)
     score = sum(model_output["scores"]) / len(model_output["scores"]) * 100
 
     return score
@@ -57,8 +57,8 @@ def calculate_xcomet_line_by_line(eval_df, model, tgt_col, src_col='en', ref_col
             triplet = {"src": src_text, "mt": tgt_text}
         triplets.append(triplet)
 
-    model_output = model.predict(triplets, batch_size=128, gpus=1)
-    scores = model_output["scores"] * 100
+    model_output = model.predict(triplets, batch_size=256, gpus=1)
+    scores = [score * 100 for score in model_output["scores"]]
     
     return scores
 
@@ -168,8 +168,9 @@ def save_line_by_line_metrics(eval_df, save_path, metric_type='xcomet', src_col=
             if 'train' not in save_path:
                 xcomet_scores = calculate_xcomet_line_by_line(eval_df, xcomet_model, tgt_col, src_col, ref_col)
             else:
-                xcomet_scores = calculate_xcomet_line_by_line(eval_df, xcomet_model, 'ko', src_col)
-            eval_df.insert(eval_df.columns.get_loc(tgt_col) + 1, eval_col, xcomet_scores)
+                xcomet_scores = calculate_xcomet_line_by_line(eval_df, xcomet_model, 'ko', src_col, None)
+            # eval_df.insert(eval_df.columns.get_loc(tgt_col) + 1, eval_col, xcomet_scores)
+            eval_df[eval_col] = xcomet_scores
 
         elif metric_type == 'bleu':
             eval_col = tgt_col.replace('trans', 'bleu')
@@ -194,7 +195,8 @@ def main():
         'api': '../results/sparta/test_sparta_bidir_api_inferenced.csv',
         'llama2': '../results/sparta/test_sparta_bidir_llama2_inferenced.csv',
         'llama3': '../results/sparta/test_sparta_bidir_llama3_inferenced.csv',
-        'mini-1m-train': '../results/others/mini-train.csv'
+        'ja-base-train': '../results/mmt/ja_base_train.csv',
+        'zh-base-train': '../results/mmt/zh_base_train.csv',
     }
     results_path = results_path_dict[args.results_type]
     results = pd.read_csv(results_path)
@@ -207,7 +209,7 @@ def main():
         make_eval_dict(results, direction_cols, data_source_cols, save_path, metric_type=args.metric_type, print_dict=True)
 
     elif args.eval_type == 'line_by_line':
-        save_line_by_line_metrics(results, save_path=results_path, metric_type=args.metric_type, src_col='src', ref_col='tgt')
+        save_line_by_line_metrics(results, save_path=results_path, metric_type=args.metric_type, src_col=args.results_type[:2], ref_col=None)
 
     elif args.eval_type == 'all':
         direction_cols = ['en2ko', 'ko2en']
