@@ -103,7 +103,8 @@ class Llama2DataCollatorForCompletionOnlyLM(DataCollatorForLanguageModeling):
             for i in range(len(examples)):
                 lang_start_idx = {}
                 for lang in self.lang_table.values():
-                    lang_token_ids = self.tokenizer.encode(lang, add_special_tokens=False)
+                    sign = f'### {lang}:'
+                    lang_token_ids = self.tokenizer.encode(sign, add_special_tokens=False)
                     lang_indices = np.where(batch["labels"][i] == lang_token_ids[0])[0]
                     if lang_indices is not None:
                         lang_start_idx[lang] = lang_indices[0]
@@ -297,8 +298,10 @@ class Llama3DataCollatorForCompletionOnlyLM(DataCollatorForLanguageModeling):
                 for lang in self.lang_table.values():
                     lang_token_ids = self.tokenizer.encode(f' {lang}', add_special_tokens=False)
                     lang_indices = np.where(batch["labels"][i] == lang_token_ids[0])[0]
-                    if lang_indices is not None:
+                    if len(lang_indices) > 0:
                         lang_start_idx[lang] = lang_indices[0]
+                    else:
+                        continue
                     if len(lang_start_idx.keys()) == 2:
                         break
 

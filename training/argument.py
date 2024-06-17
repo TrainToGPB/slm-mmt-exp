@@ -132,8 +132,8 @@ def parse_arguments_llama(yaml_path):
     parser.add_argument('--instruction', type=str, default=data_config['instruction'], help="Training instruction for the model.")
     parser.add_argument('--suffix_src', type=str, default=data_config['suffix_src'], help="Suffix for the prompt in source language")
     parser.add_argument('--suffix_tgt', type=str, default=data_config['suffix_tgt'], help="Suffix for the prompt in target language")
-    parser.add_argument('--ko_col', type=str, default=data_config['ko_col'], help="Column name for Korean")
-    parser.add_argument('--en_col', type=str, default=data_config['en_col'], help="Column name for English")
+    parser.add_argument('--lang_col1', type=str, default=data_config['lang_col1'], help="Column name for Language 1")
+    parser.add_argument('--lang_col2', type=str, default=data_config['lang_col2'], help="Column name for Language 2")
 
     # qlora config
     parser.add_argument('--use_4bit', type=lambda x: (str(x).lower() == 'true'), default=qlora_config['use_4bit'], help="Use 4-bit quantization")

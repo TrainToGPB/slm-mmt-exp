@@ -51,8 +51,10 @@ from custom_utils.general_secret import WANDB_CLIENT_KEY # Use your own path
 
 
 LANG_TABLE = {
+    "ko": "한국어",
     "en": "English",
-    "ko": "한국어"
+    "ja": "日本語",
+    "zh": "中文",
 }
 
 
@@ -213,17 +215,17 @@ def drop_long_texts(dataset, tokenizer, max_length=512):
     return dataset_dropped
 
 
-def map_bidirectional(dataset, ko_col='ko', en_col='en'):
+def map_bidirectional(dataset, lang_col1='ko', lang_col2='en'):
     mapped_dataset = defaultdict(list)
     tqdm_iterator = tqdm(
-        zip(dataset[ko_col], dataset[en_col]),
-        total=len(dataset[ko_col]), 
+        zip(dataset[lang_col1], dataset[lang_col2]),
+        total=len(dataset), 
         desc=f"Mapping dataset"
     )
-    for ko, en in tqdm_iterator:
-        mapped_dataset['src'].extend([ko, en])
-        mapped_dataset['tgt'].extend([en, ko])
-        mapped_dataset['direction'].extend(['ko-en', 'en-ko'])
+    for lang1, lang2 in tqdm_iterator:
+        mapped_dataset['src'].extend([lang1, lang2])
+        mapped_dataset['tgt'].extend([lang2, lang1])
+        mapped_dataset['direction'].extend([f'{lang_col1}-{lang_col2}', f'{lang_col2}-{lang_col1}'])
         
     mapped_dataset = Dataset.from_dict(mapped_dataset)
 
@@ -280,8 +282,15 @@ def train(args):
     else:
         train_dataset = load_dataset(args.train_dataset_name)['train']
         eval_dataset = load_dataset(args.eval_dataset_name)['validation']
-    train_dataset = map_bidirectional(train_dataset, ko_col=args.ko_col, en_col=args.en_col)
-    eval_dataset = map_bidirectional(eval_dataset, ko_col=args.ko_col, en_col=args.en_col)
+    train_dataset = map_bidirectional(train_dataset, lang_col1=args.lang_col1, lang_col2=args.lang_col2)
+    eval_dataset = map_bidirectional(eval_dataset, lang_col1=args.lang_col1, lang_col2=args.lang_col2)
+
+    if args.just_test:
+        train_dataset = train_dataset.select(range(1000))
+        eval_dataset = eval_dataset.select(range(10))
+    else:
+        train_dataset = drop_long_texts(train_dataset, tokenizer, max_length=args.max_length)
+        eval_dataset = drop_long_texts(eval_dataset, tokenizer, max_length=args.max_length)
 
     dataset_size = len(train_dataset)
     warmup_steps = calculate_warmup_steps(
@@ -295,20 +304,23 @@ def train(args):
 
     if args.just_test:
         project_name = 'test'
-        output_dir = '../models/test'
+        output_dir = '/data/sehyeong/nmt/models/mmt_ft/test'
         logging_steps = 1
         eval_steps = 1
         save_steps = 1
-        train_dataset = train_dataset.select(range(1000))
-        eval_dataset = eval_dataset.select(range(10))
     else:
         project_name = args.project_name
         output_dir = args.output_dir
-        logging_steps = min(25, warmup_steps // 10) if warmup_steps > 0 else args.logging_steps
+        logging_steps = min(25, warmup_steps // 10) if warmup_steps >= 10 else args.logging_steps
         eval_steps = warmup_steps if warmup_steps > 0 else args.eval_steps
         save_steps = warmup_steps if warmup_steps > 0 else args.save_steps
-        train_dataset = drop_long_texts(train_dataset, tokenizer, max_length=args.max_length)
-        eval_dataset = drop_long_texts(eval_dataset, tokenizer, max_length=args.max_length)
+
+    args.project_name = project_name
+    args.output_dir = output_dir
+    args.warmup_steps = warmup_steps
+    args.logging_steps = logging_steps
+    args.eval_steps = eval_steps
+    args.save_steps = save_steps
 
     wandb.login(
         anonymous='never',
@@ -316,7 +328,7 @@ def train(args):
         relogin=True,
         force=True
     )
-    wandb.init(project=project_name, name=args.run_name)
+    wandb.init(project=project_name, name=args.run_name, config=args)
 
     training_args = TrainingArguments(
         output_dir=output_dir,
@@ -404,12 +416,16 @@ def train(args):
         preds, labels, inputs = p.predictions[0], p.label_ids, p.inputs
 
         first_non_ignore_indices = np.argmax(labels != IGNORE_INDEX, axis=1)
-        eos_token_indices = np.where(preds == tokenizer.eos_token_id)[1]
-        for i, (non_ignore_idx, eos_token_idx) in enumerate(zip(first_non_ignore_indices, eos_token_indices)):
-            preds[i, :non_ignore_idx-1] = tokenizer.pad_token_id
-            preds[i, eos_token_idx+1:] = tokenizer.pad_token_id
-        preds[preds == IGNORE_INDEX] = tokenizer.pad_token_id
-        labels = np.where(labels != IGNORE_INDEX, labels, tokenizer.pad_token_id)
+        for i, non_ig_idx in enumerate(first_non_ignore_indices):
+            if non_ig_idx > 0:
+                preds[i, :non_ig_idx-1] = IGNORE_INDEX
+        eos_indices = np.argmax(preds == tokenizer.eos_token_id, axis=1)
+        for i, eos_idx in enumerate(eos_indices):
+            if eos_idx < len(preds[i]):
+                preds[i, eos_idx+1:] = IGNORE_INDEX
+
+        preds = np.where(preds == IGNORE_INDEX, tokenizer.pad_token_id, preds)
+        labels = np.where(labels == IGNORE_INDEX, tokenizer.pad_token_id, labels)
 
         decoded_labels = tokenizer.batch_decode(labels, skip_special_tokens=True)
         decoded_labels = [label.strip() for label in decoded_labels]
@@ -425,6 +441,8 @@ def train(args):
                     lang_word = ' ' + lang_word
                 lang_encoding = np.array(tokenizer.encode(lang_word, add_special_tokens=False))
                 lang_idx = find_start_idx_window(input_id, lang_encoding)
+                if lang_idx == -1:
+                    continue
                 lang_start_idxs[lang] = lang_idx
                 if len(lang_start_idxs.keys()) == 2:
                     lang1, lang2 = list(lang_start_idxs.keys())
