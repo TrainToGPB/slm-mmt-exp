@@ -2,20 +2,11 @@
 Perform inference on the specified dataset using the specified pre-trained language model.
 
 The following models are supported:
-- opus (제외: 번역 안됨)
-- mbart
-- nllb-600m
-- nllb-1.3b (제외)
-- madlad
-- mbart-aihub
 - llama
-- llama-aihub-qlora
-- llama-aihub-qlora-bf16 (merged & upscaled)
-- llama-aihub-qlora-fp16 (merged & upscaled)
-- llama-aihub-qlora-bf16-vllm (merged & upscaled + vLLM)
-- llama-aihub-qlora-augment (확장된 데이터)
-- llama-aihub-qlora-reverse-new (llama-aihub-qlora 체크포인트에서 새로운 데이터로 한-영 역방향 학습)
-- llama-aihub-qlora-reverse-overlap (llama-aihub-qlora 체크포인트에서 동일한 데이터로 한-영 역방향 학습)
+- llama-qlora
+- llama-qlora-bf16 (merged & upscaled)
+- llama-qlora-fp16 (merged & upscaled)
+- llama-qlora-bf16-vllm (merged & upscaled + vLLM)
 
 The following datasets are supported:
 - aihub: AI Hub integrated dataset (ref: https://huggingface.co/datasets/traintogpb/aihub-koen-translation-integrated-tiny-100k)
@@ -88,48 +79,24 @@ def load_model_and_tokenizer(model_type):
     """
     # Model mapping
     model_mapping = {
-        'opus': ('Helsinki-NLP/opus-mt-tc-big-en-ko', MarianMTModel, MarianTokenizer),
-        'mbart': ('facebook/mbart-large-50-many-to-many-mmt', MBartForConditionalGeneration, MBart50Tokenizer),
-        'nllb-600m': ('facebook/nllb-200-distilled-600M', M2M100ForConditionalGeneration, NllbTokenizer),
-        'nllb-1.3b': ('facebook/nllb-200-distilled-1.3B', M2M100ForConditionalGeneration, NllbTokenizer),
-        'madlad': ('google/madlad400-3b-mt', T5ForConditionalGeneration, T5Tokenizer),
-        'mbart-aihub': (os.path.join(SCRIPT_DIR, '../../training/mbart/models/mbart-full'), MBartForConditionalGeneration, MBart50Tokenizer),
+        'llama-2-vllm': ('meta-llama/Llama-2-7b-hf', None, LlamaTokenizer),
+        'llama-2-chat-vllm': ('meta-llama/Llama-2-7b-chat-hf', None, LlamaTokenizer),
         'llama-2-ko-vllm': ('beomi/open-llama-2-ko-7b', None, LlamaTokenizer),
         'llama-2-ko-chat-vllm': ('kfkas/Llama-2-ko-7b-Chat', None, LlamaTokenizer),
+        'llama-3-vllm': ('meta-llama/Meta-Llama-3-8B', None, AutoTokenizer),
+        'llama-3-chat-vllm': ('meta-llama/Meta-Llama-3-8B-Instruct', None, AutoTokenizer),
         'llama-3-ko-vllm': ('beomi/Llama-3-Open-Ko-8B', None, AutoTokenizer),
-        'llama-3-koen-vllm': ('beomi/Llama-3-KoEn-8B', None, AutoTokenizer),
-        'llama-3-koen-chat-vllm': ('beomi/Llama-3-KoEn-8B-Instruct-preview', None, AutoTokenizer),
-        'llama-2-ko-tiny-qlora': (('beomi/open-llama-2-ko-7b', 'traintogpb/llama-2-en2ko-translator-7b-qlora-adapter'), LlamaForCausalLM, LlamaTokenizer),
-        'llama-2-ko-tiny-qlora-bf16': ('traintogpb/llama-2-en2ko-translator-7b-qlora-bf16-upscaled', LlamaForCausalLM, LlamaTokenizer),
-        'llama-2-ko-tiny-qlora-fp16': (os.path.join(SCRIPT_DIR, '../../training/llama_qlora/models/baseline-merged-fp16'), LlamaForCausalLM, LlamaTokenizer),
-        'llama-2-ko-tiny-qlora-bf16-vllm': ('traintogpb/llama-2-en2ko-translator-7b-qlora-bf16-upscaled', None, LlamaTokenizer),
-        'llama-2-ko-tiny-qlora-augment': (('beomi/open-llama-2-ko-7b', os.path.join(SCRIPT_DIR, '../../training/llama_qlora/models/augment')), LlamaForCausalLM, LlamaTokenizer),
-        'llama-2-ko-tiny-qlora-reverse-new': (('beomi/open-llama-2-ko-7b', os.path.join(SCRIPT_DIR, '../../training/llama_qlora/models/continuous-reverse-new')), LlamaForCausalLM, LlamaTokenizer),
-        'llama-2-ko-tiny-qlora-reverse-overlap': (('beomi/open-llama-2-ko-7b', os.path.join(SCRIPT_DIR, '../../training/llama_qlora/models/continuous-reverse-overlap')), LlamaForCausalLM, LlamaTokenizer),
-        'madlad-aihub-7b-bt-qlora': (('google/madlad400-7b-mt-bt', os.path.join(SCRIPT_DIR, '../../training/madlad/models/7b-bt-en2ko')), T5ForConditionalGeneration, T5Tokenizer),
-        'mt5-aihub-base-fft': (os.path.join(SCRIPT_DIR, '../../training/mt5/models/base-fft-en2ko-separate-token-constlr-70epoch'), MT5ForConditionalGeneration, T5Tokenizer),
-        # alma-qlora-dpo 모델 정상 사용 불가: lora_A 가중치 비어있음
-        'alma-qlora-dpo-policy': (('haoranxu/ALMA-7B-Pretrain', os.path.join(SCRIPT_DIR, '../../training/llama_qlora/models/alma-dpo/policy')), LlamaForCausalLM, LlamaTokenizer),
-        'alma-qlora-dpo-reference': (('haoranxu/ALMA-7B-Pretrain', os.path.join(SCRIPT_DIR, '../../training/llama_qlora/models/alma-dpo/reference')), LlamaForCausalLM, LlamaTokenizer),
-        'llama-2-ko-sparta-tiny-qlora': (('beomi/open-llama-2-ko-7b', 'traintogpb/llama-2-enko-translator-7b-qlora-adapter'), LlamaForCausalLM, LlamaTokenizer),
-        'llama-2-ko-sparta-tiny-qlora-bf16': ('traintogpb/llama-2-enko-translator-7b-qlora-bf16-upscaled', LlamaForCausalLM, LlamaTokenizer),
-        'llama-2-ko-sparta-tiny-qlora-bf16-vllm': ('traintogpb/llama-2-enko-translator-7b-qlora-bf16-upscaled', None, LlamaTokenizer),
-        'llama-2-ko-sparta-mini-qlora': (('beomi/open-llama-2-ko-7b', os.path.join(SCRIPT_DIR, '../../training/llama_qlora/models/llama2-ko-sparta-mini')), LlamaForCausalLM, LlamaTokenizer),
-        'llama-2-ko-sparta-mini-qlora-bf16': (os.path.join(SCRIPT_DIR, '../../training/llama_qlora/models/llama2-ko-sparta-mini-merged-bf16'), LlamaForCausalLM, LlamaTokenizer),
-        'llama-2-ko-sparta-mini-qlora-bf16-vllm': (os.path.join(SCRIPT_DIR, '../../training/llama_qlora/models/llama2-ko-sparta-mini-merged-bf16'), None, LlamaTokenizer),
-        'llama-3-ko-sparta-tiny-qlora': (('beomi/Llama-3-Open-Ko-8B', os.path.join(SCRIPT_DIR, '../../training/llama_qlora/models/llama3-ko-sparta-tiny')), AutoModelForCausalLM, AutoTokenizer),
-        'llama-3-ko-sparta-tiny-qlora-bf16': (os.path.join(SCRIPT_DIR, '../../training/llama_qlora/models/llama3-ko-sparta-tiny-merged-bf16'), AutoModelForCausalLM, AutoTokenizer),
-        'llama-3-ko-sparta-tiny-qlora-bf16-vllm': (os.path.join(SCRIPT_DIR, '../../training/llama_qlora/models/llama3-ko-sparta-tiny-merged-bf16'), None, AutoTokenizer),
-        'llama-3-ko-sparta-tiny-odd-qlora-bf16-vllm': (os.path.join(SCRIPT_DIR, '../../training/llama_qlora/models/llama3-ko-sparta-tiny-odd-merged-bf16'), None, AutoTokenizer),
-        'llama-3-koen-sparta-tiny-qlora-bf16-vllm': (os.path.join(SCRIPT_DIR, '../../training/llama_qlora/models/llama3-koen-sparta-tiny-merged-bf16'), None, AutoTokenizer),
-        'llama-3-ko-tiny-qlora-bf16-vllm': (os.path.join(SCRIPT_DIR, '../../training/llama_qlora/models/llama3-ko-tiny-merged-bf16'), None, AutoTokenizer),
-        'llama-3-ko-mini-qlora-bf16-vllm': (os.path.join(SCRIPT_DIR, '../../training/llama_qlora/models/llama3-ko-mini-merged-bf16'), None, AutoTokenizer),
-        'llama-3-ko-sparta-mini-qlora': (('beomi/Llama-3-Open-Ko-8B', os.path.join(SCRIPT_DIR, '../../training/llama_qlora/models/llama3-ko-sparta-mini')), AutoModelForCausalLM, AutoTokenizer),
-        'llama-3-ko-sparta-mini-qlora-bf16': (os.path.join(SCRIPT_DIR, '../../training/llama_qlora/models/llama3-ko-sparta-mini-merged-bf16'), AutoModelForCausalLM, AutoTokenizer),
-        'llama-3-ko-sparta-mini-qlora-bf16-vllm': (os.path.join(SCRIPT_DIR, '../../training/llama_qlora/models/llama3-ko-sparta-mini-merged-bf16'), None, AutoTokenizer),
-        'llama-3-ko-sparta-mini-word-firstlow-all-bidir-qlora-bf16-vllm': (os.path.join(SCRIPT_DIR, '../../training/llama_qlora/models/llama3-word-firstlow-all-bidir-merged-bf16'), None, AutoTokenizer),
-        'llama-3-ko-sparta-mini-word-lastlow-all-bidir-qlora-bf16-vllm': (os.path.join(SCRIPT_DIR, '../../training/llama_qlora/models/llama3-word-lastlow-all-bidir-merged-bf16'), None, AutoTokenizer),
-        'llama-3-ko-sparta-mini-word-mix-all-bidir-qlora-bf16-vllm': (os.path.join(SCRIPT_DIR, '../../training/llama_qlora/models/llama3-word-mix-all-bidir-merged-bf16'), None, AutoTokenizer),
+        'llama-3-ko-chat-vllm': ('beomi/Llama-3-Open-Ko-8B-Instruct-preview', None, AutoTokenizer),
+        'llama-2-ko-prime-base-en-qlora-bf16-vllm': (os.path.join(SCRIPT_DIR, '/data/sehyeong/nmt/models/onnx/llama2-prime-base'), None, LlamaTokenizer),
+        'llama-3-ko-prime-base-en-qlora-bf16-vllm': ('traintogpb/llama-3-enko-translator-8b-qlora-bf16-upscaled', None, AutoTokenizer),
+        'llama-3-prime-base-ja=qlora-bf16-vllm': ('/data/sehyeong/nmt/models/mmt_ft/en', None, AutoTokenizer),
+        'llama-3-ko-prime-base-ja=qlora-bf16-vllm': ('/data/sehyeong/nmt/models/mmt_ft/ko', None, AutoTokenizer),
+        'llama-3-ja-prime-base-ja=qlora-bf16-vllm': ('/data/sehyeong/nmt/models/mmt_ft/ja', None, AutoTokenizer),
+        'llama-3-koja-scaled-halfja-prime-base-ja=qlora-bf16-vllm': ('/data/sehyeong/nmt/models/mmt_ft/koja-halfja', None, AutoTokenizer),
+        'llama-3-kojazh-scaled-equal-prime-base-ja=qlora-bf16-vllm': ('/data/sehyeong/nmt/models/mmt_ft/kojazh-equal', None, AutoTokenizer),
+        'llama-3-koja-scaled-sigmoid-prime-base-ja=qlora-bf16-vllm': ('/data/sehyeong/nmt/models/mmt_ft/koja-sigmoid', None, AutoTokenizer),
+        'llama-3-koja-scaled-linear-prime-base-ja=qlora-bf16-vllm': ('/data/sehyeong/nmt/models/mmt_ft/koja-linear', None, AutoTokenizer),
+        'llama-3-ko-prime-base-word-mix-all-bidir-qlora-bf16-vllm': (os.path.join(SCRIPT_DIR, '../../training/llama_qlora/models/llama3-word-mix-all-bidir-merged-bf16'), None, AutoTokenizer),
     }
     assert model_type in model_mapping.keys(), 'Wrong model type'
 
@@ -156,14 +123,14 @@ def load_model_and_tokenizer(model_type):
             model_name, 
             max_length=768 if model_type.startswith('llama') else 512,
             quantization_config=bnb_config, 
-            attn_implementation='flash_attention_2' if 'sparta' in model_type or model_type.startswith('alma') else None,
-            torch_dtype=torch_dtype
+            attn_implementation='flash_attention_2' if 'prime' in model_type or model_type.startswith('alma') else None,
+            torch_dtype=torch_dtype,
         )
         model = PeftModel.from_pretrained(
             model, 
             adapter_path, 
             torch_dtype=torch_dtype,
-            adapter_name=model_type.split('-')[-1] if 'dpo' in model_type else 'default'
+            adapter_name=model_type.split('-')[-1] if 'dpo' in model_type else 'default',
         )
     else:
         model = model_cls.from_pretrained(model_name)
@@ -212,7 +179,7 @@ def translate(model, tokenizer, text, model_type, src_lang=None, tgt_lang=None, 
     if model_type.startswith('madlad'):
         input_text = f"<2{tgt_lang}> {text}"
     elif 'llama' in model_type:
-        # if 'sparta' in model_type:
+        # if 'prime' in model_type:
         input_text = f"Translate this from {LANG_TABLE[src_lang]} to {LANG_TABLE[tgt_lang]}.\n### {LANG_TABLE[src_lang]}: {text}\n### {LANG_TABLE[tgt_lang]}:"
         if 'llama-3' in model_type and 'qlora' in model_type:
             input_text += " "
@@ -402,9 +369,9 @@ if __name__ == '__main__':
             'sample': os.path.join(SCRIPT_DIR, "../results/sample.csv"),
             'aihub': os.path.join(SCRIPT_DIR, "../results/test_tiny_uniform100_inferenced.csv"),
             'flores': os.path.join(SCRIPT_DIR, "../results/test_flores_inferenced.csv"),
-            'sparta-api': os.path.join(SCRIPT_DIR, "../results/sparta/test_sparta_bidir_api_inferenced.csv"),
-            'sparta-llama2': os.path.join(SCRIPT_DIR, "../results/sparta/test_sparta_bidir_llama2_inferenced.csv"),
-            'sparta-llama3': os.path.join(SCRIPT_DIR, "../results/sparta/test_sparta_bidir_llama3_inferenced.csv"),
+            'prime-api': os.path.join(SCRIPT_DIR, "../results/prime/test_sparta_bidir_api_inferenced.csv"),
+            'prime-llama2': os.path.join(SCRIPT_DIR, "../results/prime/test_sparta_bidir_llama2_inferenced.csv"),
+            'prime-llama3': os.path.join(SCRIPT_DIR, "../results/prime/test_sparta_bidir_llama3_inferenced.csv"),
             'dpo': os.path.join(SCRIPT_DIR, "../results/koen_dpo_bidir_inferenced.csv"),
             'ko_words': os.path.join(SCRIPT_DIR, "../results/words/ko_word_test_1k.csv"),
             'en_words': os.path.join(SCRIPT_DIR, "../results/words/en_word_test_1k.csv"),
@@ -412,40 +379,24 @@ if __name__ == '__main__':
         file_path = file_path_dict[dataset]
 
     model_type_dict = {
-        'mbart': 'mbart',
-        'nllb': 'nllb-600m',
-        'madlad': 'madlad',
-        'madlad-qlora': 'madlad-aihub-7b-bt-qlora',
-        'mt5-fft': 'mt5-aihub-base-fft',
-        'alma-pol': 'alma-qlora-dpo-policy',
-        'alma-ref': 'alma-qlora-dpo-reference',
-        'llama-2-vllm': 'llama-2-ko-vllm',
-        'llama-2-chat-vllm': 'llama-2-ko-chat-vllm',
-        'llama-3-vllm': 'llama-3-ko-vllm',
-        'llama-3-koen-vllm': 'llama-3-koen-vllm',
-        'llama-3-koen-chat-vllm': 'llama-3-koen-chat-vllm',
-        'llama-2-tiny-qlora': 'llama-2-ko-tiny-qlora',
-        'llama-2-tiny-bf16': 'llama-2-ko-tiny-qlora-bf16',
-        'llama-2-tiny-vllm': 'llama-2-ko-tiny-qlora-bf16-vllm',
-        'llama-2-sparta-tiny-qlora': 'llama-2-ko-sparta-tiny-qlora',
-        'llama-2-sparta-tiny-bf16': 'llama-2-ko-sparta-tiny-qlora-bf16',
-        'llama-2-sparta-tiny-vllm': 'llama-2-ko-sparta-tiny-qlora-bf16-vllm',
-        'llama-2-sparta-mini-qlora': 'llama-2-ko-sparta-mini-qlora',
-        'llama-2-sparta-mini-bf16': 'llama-2-ko-sparta-mini-qlora-bf16',
-        'llama-2-sparta-mini-vllm': 'llama-2-ko-sparta-mini-qlora-bf16-vllm',
-        'llama-3-sparta-tiny-qlora': 'llama-3-ko-sparta-tiny-qlora',
-        'llama-3-sparta-tiny-bf16': 'llama-3-ko-sparta-tiny-qlora-bf16',
-        'llama-3-sparta-tiny-vllm': 'llama-3-ko-sparta-tiny-qlora-bf16-vllm',
-        'llama-3-koen-sparta-tiny-vllm': 'llama-3-koen-sparta-tiny-qlora-bf16-vllm',
-        'llama-3-sparta-tiny-odd-vllm': 'llama-3-ko-sparta-tiny-odd-qlora-bf16-vllm',
-        'llama-3-tiny-vllm': 'llama-3-ko-tiny-qlora-bf16-vllm',
-        'llama-3-mini-vllm': 'llama-3-ko-mini-qlora-bf16-vllm',
-        'llama-3-sparta-mini-qlora': 'llama-3-ko-sparta-mini-qlora',
-        'llama-3-sparta-mini-bf16': 'llama-3-ko-sparta-mini-qlora-bf16',
-        'llama-3-sparta-mini-vllm': 'llama-3-ko-sparta-mini-qlora-bf16-vllm',
-        'llama-3-firstlow-all-bidir-vllm': 'llama-3-ko-sparta-mini-word-firstlow-all-bidir-qlora-bf16-vllm',
-        'llama-3-lastlow-all-bidir-vllm': 'llama-3-ko-sparta-mini-word-lastlow-all-bidir-qlora-bf16-vllm',
-        'llama-3-mix-all-bidir-vllm': 'llama-3-ko-sparta-mini-word-mix-all-bidir-qlora-bf16-vllm',
+        'llama-2': 'llama-2-vllm',
+        'llama-2-chat': 'llama-2-chat-vllm',
+        'llama-2-ko': 'llama-2-ko-vllm',
+        'llama-2-ko-chat': 'llama-2-ko-chat-vllm',
+        'llama-3': 'llama-3-vllm',
+        'llama-3-chat': 'llama-3-chat-vllm',
+        'llama-3-ko': 'llama-3-ko-vllm',
+        'llama-3-ko-chat': 'llama-3-ko-chat-vllm',
+        'llama-2-ko-prime-base-en': 'llama-2-ko-prime-base-en-qlora-bf16-vllm',
+        'llama-3-ko-prime-base-en': 'llama-3-ko-prime-base-en-qlora-bf16-vllm',
+        'llama-3-prime-base-ja': 'llama-3-ko-prime-base-ja=qlora-bf16-vllm',
+        'llama-3-ko-prime-base-ja': 'llama-3-ko-prime-tiny-ja-qlora-bf16-vllm',
+        'llama-3-ja-prime-base-ja': 'llama-3-ja-prime-tiny-ja-qlora-bf16-vllm',
+        'llama-3-koja-halfja-prime-base-ja': 'llama-3-koja-scaled-halfja-prime-tiny-ja-qlora-bf16-vllm',
+        'llama-3-kojazh-equal-prime-base-ja': 'llama-3-kojazh-scaled-equal-prime-tiny-ja-qlora-bf16-vllm',
+        'llama-3-koja-sigmoid-prime-base-ja': 'llama-3-koja-scaled-sigmoid-prime-tiny-ja-qlora-bf16-vllm',
+        'llama-3-koja-linear-prime-base-ja': 'llama-3-koja-scaled-linear-prime-tiny-ja-qlora-bf16-vllm',
+        'llama-3-ko-mix-all-bidir': 'llama-3-ko-prime-base-en-word-mix-all-bidir-qlora-bf16-vllm',
     }
     
     model_type = model_type_dict[args.model_type]
@@ -459,7 +410,7 @@ if __name__ == '__main__':
         print(f"Sentence: {args.sentence}")
 
     if args.inference_type == 'dataset':
-        source_column = "src" if any(args.dataset.startswith(bidir_data) for bidir_data in ['sparta', 'sample', 'dpo']) else args.src_lang
+        source_column = "src" if any(args.dataset.startswith(bidir_data) for bidir_data in ['prime', 'sample', 'dpo']) else args.src_lang
         target_column = model_type + '_trans'
         inference(
             model_type, 
