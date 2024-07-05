@@ -200,11 +200,11 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_path", type=str, default=None)
     parser.add_argument("--adapter_path", type=str, default=None)
-    parser.add_argument("--save_dequant_plm_path", type=str, default=None)
+    parser.add_argument("--save_dequant_plm_path", type=str, default='/data/sehyeong/nmt/models/temp')
     parser.add_argument("--save_dequant_merged_bf16_path", type=str, default=None)
     args = parser.parse_args()
 
-    dequantize_and_save(args.model_path, args.adapter_path, args.save_dequant_plm_path, args.save_dequant_merged_bf16_path)
+    dequantize_and_save(args.model_path, args.adapter_path, args.save_dequant_plm_path, f'{args.adapter_path}-merged')
 
     # convert_bf16_to_fp16(save_dequant_merged_bf16_path, save_dequant_merged_fp16_path)
     

@@ -103,8 +103,8 @@ class Llama2DataCollatorForCompletionOnlyLM(DataCollatorForLanguageModeling):
             for i in range(len(examples)):
                 lang_start_idx = {}
                 for lang in self.lang_table.values():
-                    sign = f'### {lang}:'
-                    lang_token_ids = self.tokenizer.encode(sign, add_special_tokens=False)
+                    lang_sign = f'### {lang}'
+                    lang_token_ids = self.tokenizer.encode(lang_sign, add_special_tokens=False)
                     lang_indices = np.where(batch["labels"][i] == lang_token_ids[0])[0]
                     if lang_indices is not None:
                         lang_start_idx[lang] = lang_indices[0]
@@ -296,12 +296,12 @@ class Llama3DataCollatorForCompletionOnlyLM(DataCollatorForLanguageModeling):
             for i in range(len(examples)):
                 lang_start_idx = {}
                 for lang in self.lang_table.values():
-                    lang_token_ids = self.tokenizer.encode(f' {lang}', add_special_tokens=False)
-                    lang_indices = np.where(batch["labels"][i] == lang_token_ids[0])[0]
-                    if len(lang_indices) > 0:
-                        lang_start_idx[lang] = lang_indices[0]
-                    else:
-                        continue
+                    lang_sign = f'### {lang}'
+                    lang_token_ids = self.tokenizer.encode(lang_sign, add_special_tokens=False)
+                    for lang_idx in range(len(batch['labels'][i]) - len(lang_token_ids) + 1):
+                        if lang_token_ids == batch['labels'][i][lang_idx:lang_idx+len(lang_token_ids)].tolist():
+                            lang_start_idx[lang] = lang_idx
+                            break
                     if len(lang_start_idx.keys()) == 2:
                         break
 
@@ -352,9 +352,7 @@ class Llama3DataCollatorForCompletionOnlyLM(DataCollatorForLanguageModeling):
                     warnings.warn(
                         f"\n[NO RESPONSE SUFFIX MATCHED]\n"
                         f"SOURCE: {src_lang} / TARGET: {tgt_lang}\n"
-                        # f"RESPONSE: {self.response_template}\n"
                         f"RESPONSE IDS: {response_token_ids_with_tgt_for_match}\n"
-                        # f"LABEL: {self.tokenizer.decode(batch['labels'][i][assistant_idx:assistant_idx+len(response_token_ids_with_tgt_for_match)], skip_special_tokens=True)}\n"
                         f"LABEL IDS: {batch['labels'][i][assistant_idx:assistant_idx+len(response_token_ids_with_tgt_for_match)].tolist()}\n"
                         f"Could not find response key `{self.response_template}` in the "
                         f'following instance:\n{self.tokenizer.decode(batch["input_ids"][i], skip_special_tokens=True)}\n'
@@ -373,9 +371,7 @@ class Llama3DataCollatorForCompletionOnlyLM(DataCollatorForLanguageModeling):
                     warnings.warn(
                         f"\n[NO INSTRUCTION SUFFIX MATCHED]\n"
                         f"SOURCE: {src_lang} / TARGET: {tgt_lang}\n"
-                        # f"INSTRUCTION: {self.instruction_template}\n"
                         f"INSTRUCTION IDS: {human_token_ids}\n"
-                        # f"LABEL: {self.tokenizer.decode(batch['labels'][i][start_idx:start_idx+len(human_token_ids)], skip_special_tokens=True)}\n"
                         f"LABEL IDS: {batch['labels'][i][start_idx:start_idx+len(human_token_ids)+1].tolist()}\n"
                         f"Could not find instruction key\n`{self.instruction_template}`\nin the "
                         f'following instance:\n{self.tokenizer.decode(batch["input_ids"][i], skip_special_tokens=True)}\n'
@@ -402,3 +398,4 @@ class Llama3DataCollatorForCompletionOnlyLM(DataCollatorForLanguageModeling):
                     batch["labels"][i, human_token_ids_idxs[-1] :] = self.ignore_index
 
         return batch
+    

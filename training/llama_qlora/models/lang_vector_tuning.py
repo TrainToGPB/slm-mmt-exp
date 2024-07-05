@@ -30,7 +30,10 @@ def check_gpu(vram=True, util=False):
 
 
 def load_model(model_name):
-    model = AutoModelForCausalLM.from_pretrained(model_name, torch_dtype=torch.bfloat16)
+    model = AutoModelForCausalLM.from_pretrained(model_name, 
+                                                 torch_dtype=torch.bfloat16, 
+                                                 cache_dir='/data/.cache/hub', 
+                                                 device_map='auto')
     model = model.to(DEVICE)
     return model
 
@@ -220,20 +223,20 @@ def main():
     vector1 = load_model(vector1_name)
     vector2 = load_model(vector2_name)
 
-    ratio = get_ratio(vector1, method='linear', sigmoid_scale_factor=6.0, sigmoid_shift_factor=3.0)
+    # ratio = get_ratio(vector1, method='linear', sigmoid_scale_factor=6.0, sigmoid_shift_factor=3.0)
 
     # weight_statistics(ratio)
 
-    vector_mix = add_models(vector1, vector2, a=1.0, b=ratio)
+    vector_mix = add_models(vector1, vector2, a=1.0, b=1.0)
 
     del vector1
     del vector2
     torch.cuda.empty_cache()
 
-    # vector3 = load_model(vector3_name)
-    # vector_mix = add_models(vector_mix, vector3, a=1.0, b=ratio)
-    # del vector3
-    # torch.cuda.empty_cache()
+    vector3 = load_model(vector3_name)
+    vector_mix = add_models(vector_mix, vector3, a=1.0, b=1.0)
+    del vector3
+    torch.cuda.empty_cache()
 
     model = load_model(model_name)
     model_multiling = add_models(model, vector_mix, a=1.0, b=1.0)
@@ -245,7 +248,7 @@ def main():
     del vector_mix
     torch.cuda.empty_cache()
 
-    save_model(model_multiling, './llama3-multilingual-koja-langvec-scaled-linear')
+    save_model(model_multiling, '/data/sehyeong/nmt/models/langvec_plm/llama3-multilingual-kojazh-langvec')
 
 
 if __name__ == '__main__':

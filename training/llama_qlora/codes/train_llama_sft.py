@@ -56,6 +56,8 @@ LANG_TABLE = {
     "ja": "日本語",
     "zh": "中文",
 }
+HF_MODEL_CACHE_DIR = "/data/.cache/hub/"
+HF_DATASETS_CACHE_DIR = "/data/.cache/datasets/"
 
 
 def load_model_and_tokenizer(args):
@@ -90,7 +92,8 @@ def load_model_and_tokenizer(args):
         quantization_config=bnb_config,
         torch_dtype=bnb_config.bnb_4bit_compute_dtype,
         attn_implementation='flash_attention_2',
-        device_map=device_map
+        device_map=device_map,
+        cache_dir=HF_MODEL_CACHE_DIR,
     )
     model.config.use_cache = False
     model.config.pretraining_tp = 1
@@ -167,6 +170,7 @@ def calculate_warmup_steps(epochs, dataset_size, batch_size, gradient_accumulati
     total_steps = epochs * steps_per_epoch / gradient_accumulation_steps
     total_steps_per_device = total_steps / torch.cuda.device_count()
     warmup_steps = int(total_steps_per_device * warmup_ratio)
+    warmup_steps = warmup_steps if warmup_steps > 1 else 0
     return warmup_steps
 
 
@@ -188,7 +192,7 @@ def drop_long_texts(dataset, tokenizer, max_length=512):
     rows_to_drop = []
     tqdm_iterator = tqdm(df.iterrows(), total=len(df), desc="Dropping long texts")
     for idx, row in tqdm_iterator:
-        src, tgt = row['direction'].split('-')[0], row['direction'].split('-')[1]
+        src, tgt = LANG_TABLE[row['direction'].split('-')[0]], LANG_TABLE[row['direction'].split('-')[1]]
         prompt = f"Translate this from {src} to {tgt}."
         suffix_src = f"### {src}:"
         suffix_tgt = f"### {tgt}:"
@@ -215,17 +219,28 @@ def drop_long_texts(dataset, tokenizer, max_length=512):
     return dataset_dropped
 
 
-def map_bidirectional(dataset, lang_col1='ko', lang_col2='en'):
+def map_bidirectional(dataset, lang_col1='ko', lang_col2='en', exist_direction=False):
     mapped_dataset = defaultdict(list)
+    if exist_direction:
+        zip_for_iter = zip(dataset[lang_col1], dataset[lang_col2], dataset['direction'])
+    else:
+        zip_for_iter = zip(dataset[lang_col1], dataset[lang_col2])
+
     tqdm_iterator = tqdm(
-        zip(dataset[lang_col1], dataset[lang_col2]),
+        zip_for_iter,
         total=len(dataset), 
         desc=f"Mapping dataset"
     )
-    for lang1, lang2 in tqdm_iterator:
+    for lang1, lang2, dir in tqdm_iterator:
         mapped_dataset['src'].extend([lang1, lang2])
         mapped_dataset['tgt'].extend([lang2, lang1])
-        mapped_dataset['direction'].extend([f'{lang_col1}-{lang_col2}', f'{lang_col2}-{lang_col1}'])
+        lang_col1 = lang_col1.replace('_ref', '') if lang_col1.endswith('_ref') else lang_col1
+        lang_col2 = lang_col2.replace('_ref', '') if lang_col2.endswith('_ref') else lang_col2
+        if exist_direction:
+            src, tgt = dir.split('-')
+            mapped_dataset['direction'].extend([f'{src}-{tgt}', f'{tgt}-{src}'])
+        else:
+            mapped_dataset['direction'].extend([f'{lang_col1}-{lang_col2}', f'{lang_col2}-{lang_col1}'])
         
     mapped_dataset = Dataset.from_dict(mapped_dataset)
 
@@ -273,24 +288,22 @@ def train(args):
     model, tokenizer = load_model_and_tokenizer(args)
 
     if args.mix_word_dataset:
-        train_dataset = load_dataset(args.train_dataset_name)['train']
-        eval_dataset = load_dataset(args.eval_dataset_name)['validation']
-        train_word_dataset = load_dataset(args.train_word_dataset_name)['train']
-        eval_word_dataset = load_dataset(args.eval_word_dataset_name)['validation']
+        train_dataset = load_dataset(args.train_dataset_name, cache_dir=HF_DATASETS_CACHE_DIR)['train']
+        eval_dataset = load_dataset(args.eval_dataset_name, cache_dir=HF_DATASETS_CACHE_DIR)['validation']
+        train_word_dataset = load_dataset(args.train_word_dataset_name, cache_dir=HF_DATASETS_CACHE_DIR)['train']
+        eval_word_dataset = load_dataset(args.eval_word_dataset_name, cache_dir=HF_DATASETS_CACHE_DIR)['validation']
         train_dataset = add_word_dataset(train_dataset, train_word_dataset, word_size=args.train_word_size)
         eval_dataset = add_word_dataset(eval_dataset, eval_word_dataset, word_size=len(eval_word_dataset))
     else:
-        train_dataset = load_dataset(args.train_dataset_name)['train']
-        eval_dataset = load_dataset(args.eval_dataset_name)['validation']
-    train_dataset = map_bidirectional(train_dataset, lang_col1=args.lang_col1, lang_col2=args.lang_col2)
-    eval_dataset = map_bidirectional(eval_dataset, lang_col1=args.lang_col1, lang_col2=args.lang_col2)
+        train_dataset = load_dataset(args.train_dataset_name, cache_dir=HF_DATASETS_CACHE_DIR)['train']
+        eval_dataset = load_dataset(args.eval_dataset_name, cache_dir=HF_DATASETS_CACHE_DIR)['validation']
+
+    train_dataset = map_bidirectional(train_dataset, lang_col1=args.lang_col1, lang_col2=args.lang_col2, exist_direction=True)
+    eval_dataset = map_bidirectional(eval_dataset, lang_col1=args.lang_col1, lang_col2=args.lang_col2, exist_direction=True)
 
     if args.just_test:
         train_dataset = train_dataset.select(range(1000))
         eval_dataset = eval_dataset.select(range(10))
-    else:
-        train_dataset = drop_long_texts(train_dataset, tokenizer, max_length=args.max_length)
-        eval_dataset = drop_long_texts(eval_dataset, tokenizer, max_length=args.max_length)
 
     dataset_size = len(train_dataset)
     warmup_steps = calculate_warmup_steps(
@@ -304,7 +317,7 @@ def train(args):
 
     if args.just_test:
         project_name = 'test'
-        output_dir = '/data/sehyeong/nmt/models/mmt_ft/test'
+        output_dir = '/data/sehyeong/nmt/models/test'
         logging_steps = 1
         eval_steps = 1
         save_steps = 1
@@ -366,7 +379,7 @@ def train(args):
         output_texts = []
         for src_text, tgt_text, direction in zip(example['src'], example['tgt'], example['direction']):
             src, tgt = direction.split('-')[0], direction.split('-')[1]
-            text = f"Translate this from {LANG_TABLE[src]} to {LANG_TABLE[tgt]}.\n### {LANG_TABLE[src]}: {src_text}\n### {LANG_TABLE[tgt]}: {tgt_text}"
+            text = f"Translate this from {LANG_TABLE[src]} to {LANG_TABLE[tgt]}.\n### {LANG_TABLE[src]}: {src_text.strip()}\n### {LANG_TABLE[tgt]}: {tgt_text.strip()}"
             output_texts.append(text)
         return output_texts
 
@@ -437,8 +450,8 @@ def train(args):
             lang_start_idxs = {}
             for lang in LANG_TABLE.keys():
                 lang_word = f'{LANG_TABLE[lang]}'
-                if 'llama-3' in args.plm_name.lower() or 'llama3' in args.plm_name.lower():
-                    lang_word = ' ' + lang_word
+                if any([plm_name in args.plm_name.lower() for plm_name in ['llama-3', 'llama3', 'gemma']]):
+                    lang_word = ' ' + lang_word 
                 lang_encoding = np.array(tokenizer.encode(lang_word, add_special_tokens=False))
                 lang_idx = find_start_idx_window(input_id, lang_encoding)
                 if lang_idx == -1:
@@ -480,10 +493,13 @@ def train(args):
         return result
 
 
-    if 'llama-3' in args.plm_name.lower() or 'llama3' in args.plm_name.lower():
+    if any([plm_name in args.plm_name.lower() for plm_name in ['llama-3', 'llama3']]):
         data_collator_cls = Llama3DataCollatorForCompletionOnlyLM
         trainer_cls = SFTTrainerWithEosToken
-    elif 'llama-2' in args.plm_name.lower() or 'llama2' in args.plm_name.lower():
+    elif any([plm_name in args.plm_name.lower() for plm_name in ['gemma']]):
+        data_collator_cls = Llama3DataCollatorForCompletionOnlyLM
+        trainer_cls = SFTTrainer
+    elif any([plm_name in args.plm_name.lower() for plm_name in ['llama-2', 'llama2']]):
         data_collator_cls = Llama2DataCollatorForCompletionOnlyLM
         trainer_cls = SFTTrainer
     else:
