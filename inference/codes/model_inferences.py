@@ -58,7 +58,9 @@ from training.training_utils import set_seed
 
 LANG_TABLE = {
     "en": "English",
-    "ko": "한국어"
+    "ko": "한국어",
+    "ja": "日本語",
+    "zh": "中文",
 }
 SEED = 42
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -79,6 +81,7 @@ def load_model_and_tokenizer(model_type):
     """
     # Model mapping
     model_mapping = {
+        # KO-EN
         'llama-2-vllm': ('meta-llama/Llama-2-7b-hf', None, LlamaTokenizer),
         'llama-2-chat-vllm': ('meta-llama/Llama-2-7b-chat-hf', None, LlamaTokenizer),
         'llama-2-ko-vllm': ('beomi/open-llama-2-ko-7b', None, LlamaTokenizer),
@@ -89,13 +92,32 @@ def load_model_and_tokenizer(model_type):
         'llama-3-ko-chat-vllm': ('beomi/Llama-3-Open-Ko-8B-Instruct-preview', None, AutoTokenizer),
         'llama-2-ko-prime-base-en-qlora-bf16-vllm': (os.path.join(SCRIPT_DIR, '/data/sehyeong/nmt/models/onnx/llama2-prime-base'), None, LlamaTokenizer),
         'llama-3-ko-prime-base-en-qlora-bf16-vllm': ('traintogpb/llama-3-enko-translator-8b-qlora-bf16-upscaled', None, AutoTokenizer),
-        'llama-3-prime-base-ja=qlora-bf16-vllm': ('/data/sehyeong/nmt/models/mmt_ft/en', None, AutoTokenizer),
-        'llama-3-ko-prime-base-ja=qlora-bf16-vllm': ('/data/sehyeong/nmt/models/mmt_ft/ko', None, AutoTokenizer),
-        'llama-3-ja-prime-base-ja=qlora-bf16-vllm': ('/data/sehyeong/nmt/models/mmt_ft/ja', None, AutoTokenizer),
-        'llama-3-koja-scaled-halfja-prime-base-ja=qlora-bf16-vllm': ('/data/sehyeong/nmt/models/mmt_ft/koja-halfja', None, AutoTokenizer),
-        'llama-3-kojazh-scaled-equal-prime-base-ja=qlora-bf16-vllm': ('/data/sehyeong/nmt/models/mmt_ft/kojazh-equal', None, AutoTokenizer),
-        'llama-3-koja-scaled-sigmoid-prime-base-ja=qlora-bf16-vllm': ('/data/sehyeong/nmt/models/mmt_ft/koja-sigmoid', None, AutoTokenizer),
-        'llama-3-koja-scaled-linear-prime-base-ja=qlora-bf16-vllm': ('/data/sehyeong/nmt/models/mmt_ft/koja-linear', None, AutoTokenizer),
+
+        # KO-JA
+        'llama-3-prime-base-ja-qlora-bf16-vllm': ('/data/sehyeong/nmt/models/mmt_ft/ko-ja/baseline-merged', None, AutoTokenizer),
+        'llama-3-ko-prime-base-ja-qlora-bf16-vllm': ('/data/sehyeong/nmt/models/mmt_ft/ko-ja/ko-merged', None, AutoTokenizer),
+        'llama-3-ja-prime-base-ja-qlora-bf16-vllm': ('/data/sehyeong/nmt/models/mmt_ft/ko-ja/ja-merged', None, AutoTokenizer),
+        'llama-3-zh-prime-base-ja-qlora-bf16-vllm': ('/data/sehyeong/nmt/models/mmt_ft/ko-ja/zh-merged', None, AutoTokenizer),
+        'llama-3-koja-scaled-halfja-prime-base-ja-qlora-bf16-vllm': ('/data/sehyeong/nmt/models/mmt_ft/ko-ja/koja-halfja-merged', None, AutoTokenizer),
+        'llama-3-koja-scaled-sigmoid-prime-base-ja-qlora-bf16-vllm': ('/data/sehyeong/nmt/models/mmt_ft/ko-ja/koja-sigmoid-merged', None, AutoTokenizer),
+        'llama-3-koja-scaled-linear-prime-base-ja-qlora-bf16-vllm': ('/data/sehyeong/nmt/models/mmt_ft/ko-ja/koja-linear-merged', None, AutoTokenizer),
+        'llama-3-kozh-scaled-halfzh-prime-base-ja-qlora-bf16-vllm': ('/data/sehyeong/nmt/models/mmt_ft/ko-ja/kozh-halfzh-merged', None, AutoTokenizer),
+        'llama-3-kojazh-scaled-equal-prime-base-ja-qlora-bf16-vllm': ('/data/sehyeong/nmt/models/mmt_ft/ko-ja/kojazh-equal-merged', None, AutoTokenizer),
+        'gemma-mling-prime-base-ja-qlora-bf16-vllm': ('/data/sehyeong/nmt/models/mmt_ft/gemma/koja-merged', None, AutoTokenizer),
+
+        # KO-ZH
+        'llama-3-prime-base-zh-qlora-bf16-vllm': ('/data/sehyeong/nmt/models/mmt_ft/ko-zh/baseline-merged', None, AutoTokenizer),
+        'llama-3-ko-prime-base-zh-qlora-bf16-vllm': ('/data/sehyeong/nmt/models/mmt_ft/ko-zh/ko-merged', None, AutoTokenizer),
+        'llama-3-ja-prime-base-zh-qlora-bf16-vllm': ('/data/sehyeong/nmt/models/mmt_ft/ko-zh/ja-merged', None, AutoTokenizer),
+        'llama-3-zh-prime-base-zh-qlora-bf16-vllm': ('/data/sehyeong/nmt/models/mmt_ft/ko-zh/zh-merged', None, AutoTokenizer),
+        'llama-3-kozh-scaled-halfzh-prime-base-zh-qlora-bf16-vllm': ('/data/sehyeong/nmt/models/mmt_ft/ko-zh/kozh-halfzh-merged', None, AutoTokenizer),
+        'llama-3-kozh-scaled-sigmoid-prime-base-zh-qlora-bf16-vllm': ('/data/sehyeong/nmt/models/mmt_ft/ko-zh/kozh-sigmoid-merged', None, AutoTokenizer),
+        'llama-3-kozh-scaled-linear-prime-base-zh-qlora-bf16-vllm': ('/data/sehyeong/nmt/models/mmt_ft/ko-zh/kozh-linear-merged', None, AutoTokenizer),
+        'llama-3-koja-scaled-halfja-prime-base-zh-qlora-bf16-vllm': ('/data/sehyeong/nmt/models/mmt_ft/ko-zh/koja-halfja-merged', None, AutoTokenizer),
+        'llama-3-kojazh-scaled-equal-prime-base-zh-qlora-bf16-vllm': ('/data/sehyeong/nmt/models/mmt_ft/ko-zh/kojazh-equal-merged', None, AutoTokenizer),
+        'gemma-mling-prime-base-zh-qlora-bf16-vllm': ('/data/sehyeong/nmt/models/mmt_ft/gemma/kozh-merged', None, AutoTokenizer),
+
+        # Word translation
         'llama-3-ko-prime-base-word-mix-all-bidir-qlora-bf16-vllm': (os.path.join(SCRIPT_DIR, '../../training/llama_qlora/models/llama3-word-mix-all-bidir-merged-bf16'), None, AutoTokenizer),
     }
     assert model_type in model_mapping.keys(), 'Wrong model type'
@@ -178,13 +200,11 @@ def translate(model, tokenizer, text, model_type, src_lang=None, tgt_lang=None, 
 
     if model_type.startswith('madlad'):
         input_text = f"<2{tgt_lang}> {text}"
-    elif 'llama' in model_type:
+    elif 'llama' in model_type or 'gemma' in model_type:
         # if 'prime' in model_type:
         input_text = f"Translate this from {LANG_TABLE[src_lang]} to {LANG_TABLE[tgt_lang]}.\n### {LANG_TABLE[src_lang]}: {text}\n### {LANG_TABLE[tgt_lang]}:"
-        if 'llama-3' in model_type and 'qlora' in model_type:
-            input_text += " "
-        # else:
-            # input_text = f"### {LANG_TABLE[src_lang]}: {text}\n### {LANG_TABLE[tgt_lang]}: "
+        # if ('llama-3' in model_type or 'gemma' in model_type) and 'qlora' in model_type:
+        #     input_text += " "
     elif model_type.startswith('mt5'):
         input_text = f"<{src_lang}> {text} <{tgt_lang}>"
     elif model_type.startswith('alma'):
@@ -356,8 +376,8 @@ if __name__ == '__main__':
     parser.add_argument("--inference_type", type=str, default='sentence', help="Inference type (sentence or dataset)")
     parser.add_argument("--dataset", type=str, default='sample', help="Dataset path for inference (only for dataset inference, preset: aihub / flores / sample, or custom path to a CSV file)")
     parser.add_argument("--sentence", type=str, default="NMIXX is a South Korean girl group that made a comeback on January 15, 2024 with their new song 'DASH'.", help="Input English text for inference (only for sentence inference)")
-    parser.add_argument("--src_lang", type=str, default="en", help="Source language code (just for sentence translation; default: en)")
-    parser.add_argument("--tgt_lang", type=str, default="ko", help="Target language code (just for sentence translation; default: ko)")
+    parser.add_argument("--src_lang", type=str, default=None, help="Source language code (just for sentence translation)")
+    parser.add_argument("--tgt_lang", type=str, default=None, help="Target language code (just for sentence translation)")
     parser.add_argument("--print_result", action="store_true", help="Print the translated text")
     args = parser.parse_args()
     dataset = args.dataset
@@ -375,6 +395,8 @@ if __name__ == '__main__':
             'dpo': os.path.join(SCRIPT_DIR, "../results/koen_dpo_bidir_inferenced.csv"),
             'ko_words': os.path.join(SCRIPT_DIR, "../results/words/ko_word_test_1k.csv"),
             'en_words': os.path.join(SCRIPT_DIR, "../results/words/en_word_test_1k.csv"),
+            'ja': os.path.join(SCRIPT_DIR, "../results/mmt/ja_test_bidir_inferenced.csv"),
+            'zh': os.path.join(SCRIPT_DIR, "../results/mmt/zh_test_bidir_inferenced.csv"),
         }
         file_path = file_path_dict[dataset]
 
@@ -389,13 +411,26 @@ if __name__ == '__main__':
         'llama-3-ko-chat': 'llama-3-ko-chat-vllm',
         'llama-2-ko-prime-base-en': 'llama-2-ko-prime-base-en-qlora-bf16-vllm',
         'llama-3-ko-prime-base-en': 'llama-3-ko-prime-base-en-qlora-bf16-vllm',
-        'llama-3-prime-base-ja': 'llama-3-ko-prime-base-ja=qlora-bf16-vllm',
-        'llama-3-ko-prime-base-ja': 'llama-3-ko-prime-tiny-ja-qlora-bf16-vllm',
-        'llama-3-ja-prime-base-ja': 'llama-3-ja-prime-tiny-ja-qlora-bf16-vllm',
-        'llama-3-koja-halfja-prime-base-ja': 'llama-3-koja-scaled-halfja-prime-tiny-ja-qlora-bf16-vllm',
-        'llama-3-kojazh-equal-prime-base-ja': 'llama-3-kojazh-scaled-equal-prime-tiny-ja-qlora-bf16-vllm',
-        'llama-3-koja-sigmoid-prime-base-ja': 'llama-3-koja-scaled-sigmoid-prime-tiny-ja-qlora-bf16-vllm',
-        'llama-3-koja-linear-prime-base-ja': 'llama-3-koja-scaled-linear-prime-tiny-ja-qlora-bf16-vllm',
+        'llama-3-prime-base-ja': 'llama-3-prime-base-ja-qlora-bf16-vllm',
+        'llama-3-ko-prime-base-ja': 'llama-3-ko-prime-base-ja-qlora-bf16-vllm',
+        'llama-3-ja-prime-base-ja': 'llama-3-ja-prime-base-ja-qlora-bf16-vllm',
+        'llama-3-zh-prime-base-ja': 'llama-3-zh-prime-base-ja-qlora-bf16-vllm',
+        'llama-3-koja-halfja-prime-base-ja': 'llama-3-koja-scaled-halfja-prime-base-ja-qlora-bf16-vllm',
+        'llama-3-koja-sigmoid-prime-base-ja': 'llama-3-koja-scaled-sigmoid-prime-base-ja-qlora-bf16-vllm',
+        'llama-3-koja-linear-prime-base-ja': 'llama-3-koja-scaled-linear-prime-base-ja-qlora-bf16-vllm',
+        'llama-3-kozh-halfzh-prime-base-ja': 'llama-3-kozh-scaled-halfzh-prime-base-ja-qlora-bf16-vllm',
+        'llama-3-kojazh-equal-prime-base-ja': 'llama-3-kojazh-scaled-equal-prime-base-ja-qlora-bf16-vllm',
+        'llama-3-prime-base-zh': 'llama-3-prime-base-zh-qlora-bf16-vllm',
+        'llama-3-ko-prime-base-zh': 'llama-3-ko-prime-base-zh-qlora-bf16-vllm',
+        'llama-3-ja-prime-base-zh': 'llama-3-ja-prime-base-zh-qlora-bf16-vllm',
+        'llama-3-zh-prime-base-zh': 'llama-3-zh-prime-base-zh-qlora-bf16-vllm',
+        'llama-3-kozh-halfzh-prime-base-zh': 'llama-3-kozh-scaled-halfzh-prime-base-zh-qlora-bf16-vllm',
+        'llama-3-kozh-sigmoid-prime-base-zh': 'llama-3-kozh-scaled-sigmoid-prime-base-zh-qlora-bf16-vllm',
+        'llama-3-kozh-linear-prime-base-zh': 'llama-3-kozh-scaled-linear-prime-base-zh-qlora-bf16-vllm',
+        'llama-3-koja-halfja-prime-base-zh': 'llama-3-koja-scaled-halfja-prime-base-zh-qlora-bf16-vllm',
+        'llama-3-kojazh-equal-prime-base-zh': 'llama-3-kojazh-scaled-equal-prime-base-zh-qlora-bf16-vllm',
+        'gemma-prime-base-ja': 'gemma-mling-prime-base-ja-qlora-bf16-vllm',
+        'gemma-prime-base-zh': 'gemma-mling-prime-base-zh-qlora-bf16-vllm',
         'llama-3-ko-mix-all-bidir': 'llama-3-ko-prime-base-en-word-mix-all-bidir-qlora-bf16-vllm',
     }
     
@@ -410,7 +445,7 @@ if __name__ == '__main__':
         print(f"Sentence: {args.sentence}")
 
     if args.inference_type == 'dataset':
-        source_column = "src" if any(args.dataset.startswith(bidir_data) for bidir_data in ['prime', 'sample', 'dpo']) else args.src_lang
+        source_column = "src"
         target_column = model_type + '_trans'
         inference(
             model_type, 
