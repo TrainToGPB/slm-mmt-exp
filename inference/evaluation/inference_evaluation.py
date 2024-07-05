@@ -3,6 +3,7 @@ from tqdm import tqdm
 
 import evaluate
 import pandas as pd
+from transformers import AutoTokenizer
 from comet import download_model, load_from_checkpoint
 
 
@@ -18,6 +19,12 @@ def read_eval_dict_yaml(file_path):
 def save_eval_dict_yaml(eval_dict, save_path):
     with open(save_path, 'w') as file:
         yaml.dump(eval_dict, file)
+
+
+def rearrange_columns(df, front_cols=['tgt'], back_cols=['src', 'direction', 'data_source']):
+    other_cols = [col for col in df.columns if col not in front_cols + back_cols]
+    df = df[front_cols + other_cols + back_cols]
+    return df
 
 
 def load_xcomet_model():
@@ -37,7 +44,7 @@ def calculate_xcomet(eval_df, model, tgt_col, src_col='en', ref_col='ko'):
         triplet = {"src": src_text, "mt": tgt_text, "ref": ref_text}
         triplets.append(triplet)
 
-    model_output = model.predict(triplets, batch_size=256, gpus=1)
+    model_output = model.predict(triplets, batch_size=128, gpus=1)
     score = sum(model_output["scores"]) / len(model_output["scores"]) * 100
 
     return score
@@ -57,21 +64,28 @@ def calculate_xcomet_line_by_line(eval_df, model, tgt_col, src_col='en', ref_col
             triplet = {"src": src_text, "mt": tgt_text}
         triplets.append(triplet)
 
-    model_output = model.predict(triplets, batch_size=256, gpus=1)
+    model_output = model.predict(triplets, batch_size=128, gpus=1)
     scores = [score * 100 for score in model_output["scores"]]
     
     return scores
+
+
+def calculate_token_len(df, tokenizer, col):
+    if col != 'src' and col != 'tgt' and not col.endswith('_trans'):
+        raise ValueError("Column name should be either 'src' or 'tgt', or ends with '_trans'")
+    token_lens = [len(tokenizer.tokenize(text)) for text in df[col]]
+    df.insert(df.columns.get_loc(col) + 1, col.replace('_trans', '_len'), token_lens)
+    return df
 
 
 def calculate_speed(eval_df, tgt_col, len_col='src_token_len'):
     tqdm_iterator = tqdm(eval_df.iterrows(), total=len(eval_df), desc="Calculating speed")
     token_per_sec = []
     for _, example in tqdm_iterator:
-        src_len = int(example[len_col])
+        token_len = int(example[len_col])
         time = float(example[tgt_col])
-
-        token_per_sec.append(src_len / time)
-
+        token_per_sec.append(token_len / time)
+    
     mean_token_per_sec = sum(token_per_sec) / len(token_per_sec) * 1000
 
     return mean_token_per_sec
@@ -127,7 +141,7 @@ def make_eval_dict(results, direction_cols, data_source_cols, save_yaml_path, me
                 if metric_type == 'xcomet':
                     score_dict[column] = calculate_xcomet(target_data, xcomet_model, column, 'src', 'tgt')
                 elif metric_type == 'speed':
-                    score_dict[column] = calculate_speed(target_data, column, 'src_token_len')
+                    score_dict[column] = calculate_speed(target_data, column, column.replace('time', 'len'))
                 elif metric_type == 'bleu':
                     score_dict[column] = calculate_sacrebleu(target_data, column, 'tgt')
 
@@ -197,13 +211,38 @@ def main():
         'llama3': '../results/sparta/test_sparta_bidir_llama3_inferenced.csv',
         'ja-base-train': '../results/mmt/ja_base_train.csv',
         'zh-base-train': '../results/mmt/zh_base_train.csv',
+        'ja': '../results/mmt/ja_test_bidir_inferenced.csv',
+        'zh': '../results/mmt/zh_test_bidir_inferenced.csv',
     }
     results_path = results_path_dict[args.results_type]
     results = pd.read_csv(results_path)
+    results.fillna(' ', inplace=True)
+
+    model_name = 'meta-llama/Meta-Llama-3-8B'
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+
+    # ko2ja_results = results[results['direction'].str.startswith('ko')]
+    # ja2ko_results = results[results['direction'].str.startswith('ja')]
+    # sacrebleu_ko2ja = calculate_sacrebleu(ko2ja_results, 'gemma-mling-prime-base-ja-qlora-bf16-vllm_trans', 'tgt')
+    # sacrebleu_ja2ko = calculate_sacrebleu(ja2ko_results, 'gemma-mling-prime-base-ja-qlora-bf16-vllm_trans', 'tgt')
+
+    # print(f"KO2JA BLEU: {sacrebleu_ko2ja}")
+    # print(f"JA2KO BLEU: {sacrebleu_ja2ko}")
+
+    for col in results.columns:
+        if col.endswith('_trans') or col == 'src' or col == 'tgt':
+            if col.replace('_trans', '_len') in results.columns:
+                continue
+            if 'gemma' in col:
+                tokenizer = AutoTokenizer.from_pretrained('google/gemma-7b')
+            results = calculate_token_len(results, tokenizer, col)
+    
+    results = rearrange_columns(results, front_cols=['tgt', 'tgt_len'], back_cols=['src', 'src_len', 'direction', 'data_source'])
+    results.to_csv(results_path, index=False)
 
     if args.eval_type == 'eval_dict':
-        direction_cols = ['en2ko', 'ko2en']
-        data_source_cols = ['aihub', 'flores']
+        direction_cols = ['ja2ko', 'ko2ja']
+        data_source_cols = ['aihub']
 
         save_path = results_path.replace('inferenced', f'{args.metric_type}').replace('.csv', '.yaml')
         make_eval_dict(results, direction_cols, data_source_cols, save_path, metric_type=args.metric_type, print_dict=True)
