@@ -108,15 +108,27 @@ def load_model_and_tokenizer(args):
     elif args.lora_target_layers == 'even':
         target_layer_indices = [i for i in range(len(model.model.layers)) if i % 2 == 0]
     
-    lora_config = LoraConfig(
-        lora_alpha=args.lora_alpha,
-        lora_dropout=args.lora_dropout,
-        r=args.lora_r,
-        bias='none',
-        target_modules=modules,
-        task_type='CAUSAL_LM',
-        layers_to_transform=target_layer_indices,
-    )
+    if args.use_mora:
+        lora_config = LoraConfig(
+            use_mora=args.use_mora,
+            mora_type=args.mora_type,
+            lora_dropout=args.lora_dropout,
+            r=args.lora_r,
+            bias='none',
+            target_modules=modules,
+            task_type='CAUSAL_LM',
+            layers_to_transform=target_layer_indices,
+        )
+    else:
+        lora_config = LoraConfig(
+            lora_alpha=args.lora_alpha,
+            lora_dropout=args.lora_dropout,
+            r=args.lora_r,
+            bias='none',
+            target_modules=modules,
+            task_type='CAUSAL_LM',
+            layers_to_transform=target_layer_indices,
+        )
 
     tokenizer = AutoTokenizer.from_pretrained(args.plm_name, trust_remote_code=True)
     tokenizer.eos_token_id = args.eos_token_id
@@ -126,7 +138,7 @@ def load_model_and_tokenizer(args):
     print(f"EOS token: {tokenizer.eos_token}")
     print(f"EOS token id: {tokenizer.eos_token_id}")
     tokenizer.add_eos_token = True
-    tokenizer.padding_side = 'right'
+    tokenizer.padding_side = 'right' # 원래 left가 맞다?
     tokenizer.model_max_length = args.max_length
 
     src_token, tgt_token = "<|src|>", "<|tgt|>"

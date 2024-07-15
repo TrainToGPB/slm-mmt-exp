@@ -146,7 +146,8 @@ def parse_arguments_llama(yaml_path):
     parser.add_argument('--lora_r', type=int, default=qlora_config['lora_r'], help="LoRA r")
     parser.add_argument('--lora_target_modules', type=lambda x: x.split(','), default=qlora_config['lora_target_modules'], help="Modules where LoRA will adapt")
     parser.add_argument('--lora_target_layers', type=str, default=qlora_config['lora_target_layers'], help="Layers where LoRA will adapt: all, odd, even")
-    parser.add_argument('--use_mora', type=str, default=qlora_config['use_mora'], help="Use MoRA or not")
+    parser.add_argument('--use_mora', type=lambda x: (str(x).lower() == 'true'), default=qlora_config['use_mora'], help="Use MoRA or not")
+    parser.add_argument('--mora_type', type=int, default=qlora_config['mora_type'], help="MoRA type")
 
     # general config
     parser.add_argument('--project_name', type=str, default=general_config['project_name'], help="WandB project name")
