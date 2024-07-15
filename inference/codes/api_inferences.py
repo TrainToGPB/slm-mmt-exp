@@ -33,7 +33,7 @@ from tqdm import tqdm
 from datetime import datetime
 
 # third-party
-from googletrans import Translator as GoogleTranslator
+# from googletrans import Translator as GoogleTranslator
 from deepl import Translator as DeeplTranslator
 import pandas as pd
 
@@ -45,12 +45,22 @@ from api_secret import (
 )
 from api_secret import (
     DEEPL_CLIENT_KEY,
+    DEEPL_CLIENT_KEY_1,
+    DEEPL_CLIENT_KEY_2,
 )
 
 
-DEEPL_LANGCODES = {
+DEEPL_LANGCODES_SRC = {
+    'en': 'EN',
+    'ko': 'KO',
+    'ja': 'JA',
+    'zh': 'ZH',
+}
+DEEPL_LANGCODES_TGT = {
     'en': 'EN-US',
     'ko': 'KO',
+    'ja': 'JA',
+    'zh': 'ZH',
 }
 
 
@@ -95,22 +105,22 @@ def papato_translate_text(text, src_lang='en', tgt_lang='ko'):
     return papago_translation
 
 
-def google_translate_text(text, src_lang='en', tgt_lang='ko'):
-    """
-    Translates a single text from English to Korean using Google Translate API.
+# def google_translate_text(text, src_lang='en', tgt_lang='ko'):
+#     """
+#     Translates a single text from English to Korean using Google Translate API.
 
-    Args:
-    - text (str): The text to be translated.
+#     Args:
+#     - text (str): The text to be translated.
 
-    Returns:
-    - google_translation (str): The translated text.
-    """
-    google_translator = GoogleTranslator()
-    google_translation = google_translator.translate(src=src_lang, dest=tgt_lang, text=text).text
-    return google_translation
+#     Returns:
+#     - google_translation (str): The translated text.
+#     """
+#     google_translator = GoogleTranslator()
+#     google_translation = google_translator.translate(src=src_lang, dest=tgt_lang, text=text).text
+#     return google_translation
 
 
-def deepl_translate_text(text, tgt_lang='ko'):
+def deepl_translate_text(text, src_lang='en', tgt_lang='ko'):
     """
     Translates a single text using the DeepL translation API.
 
@@ -120,30 +130,32 @@ def deepl_translate_text(text, tgt_lang='ko'):
     Returns:
     - deepl_translation (str): The translated text.
     """
-    deepl_translator = DeeplTranslator(DEEPL_CLIENT_KEY_0)
-    deepl_translation = deepl_translator.translate_text(target_lang=DEEPL_LANGCODES[tgt_lang], text=text)
+    deepl_translator = DeeplTranslator(DEEPL_CLIENT_KEY)
+    deepl_translation = deepl_translator.translate_text(source_lang=DEEPL_LANGCODES_SRC[src_lang], 
+                                                        target_lang=DEEPL_LANGCODES_TGT[tgt_lang], 
+                                                        text=text)
     return deepl_translation
 
 
-def translate_single_text(text, translator='google'):
-    """
-    Translates a single text using the specified translator.
+# def translate_single_text(text, translator='google'):
+#     """
+#     Translates a single text using the specified translator.
 
-    Args:
-    - text (str): The text to be translated.
-    - translator (str, optional): The translator to be used. Defaults to 'google'.
+#     Args:
+#     - text (str): The text to be translated.
+#     - translator (str, optional): The translator to be used. Defaults to 'google'.
 
-    Returns:
-    - translation (str): The translated text.
-    """
-    trans_dict = {
-        'papago': papato_translate_text,
-        'google': google_translate_text,
-        'deepl': deepl_translate_text
-    }
-    translatior = trans_dict[translator]
-    translation = translatior(text)
-    return translation
+#     Returns:
+#     - translation (str): The translated text.
+#     """
+#     trans_dict = {
+#         'papago': papato_translate_text,
+#         'google': google_translate_text,
+#         'deepl': deepl_translate_text
+#     }
+#     translatior = trans_dict[translator]
+#     translation = translatior(text)
+#     return translation
 
 
 def papago_translate_df(df, client_id=PAPAGO_CLIENT_ID, client_secret=PAPAGO_CLIENT_SECRET, print_result=True):
@@ -221,79 +233,79 @@ def papago_translate_df(df, client_id=PAPAGO_CLIENT_ID, client_secret=PAPAGO_CLI
     return df
 
 
-def google_translate_df(df, print_result=True):
-    """
-    Translates the 'en' column of a DataFrame from English to Korean using Google Translate API.
+# def google_translate_df(df, print_result=True):
+#     """
+#     Translates the 'en' column of a DataFrame from English to Korean using Google Translate API.
 
-    Args:
-    - df (pandas.DataFrame): The DataFrame containing the 'en' column to be translated.
+#     Args:
+#     - df (pandas.DataFrame): The DataFrame containing the 'en' column to be translated.
 
-    Returns:
-    - df (pandas.DataFrame): The DataFrame with an additional '
-    """
-    translator = GoogleTranslator()
-    error_occurred = False
+#     Returns:
+#     - df (pandas.DataFrame): The DataFrame with an additional '
+#     """
+#     translator = GoogleTranslator()
+#     error_occurred = False
 
-    if 'google_trans' in df.columns:
-        translations = df['google_trans'].dropna().tolist()
-        if len(translations) == len(df):
-            print("All data are translated already with Google.")
-            return df
-        start_idx = df['google_trans'].isnull().idxmax()
-    else:
-        translations = []
-        start_idx = 0
+#     if 'google_trans' in df.columns:
+#         translations = df['google_trans'].dropna().tolist()
+#         if len(translations) == len(df):
+#             print("All data are translated already with Google.")
+#             return df
+#         start_idx = df['google_trans'].isnull().idxmax()
+#     else:
+#         translations = []
+#         start_idx = 0
 
-    if 'google_time' in df.columns:
-        elapsed_times = df['google_time'].dropna().tolist()
-    else:
-        elapsed_times = []
+#     if 'google_time' in df.columns:
+#         elapsed_times = df['google_time'].dropna().tolist()
+#     else:
+#         elapsed_times = []
 
-    tqdm_iterator = tqdm(df.iloc[start_idx:].iterrows(), total=len(df) - start_idx, desc='Google translating')
-    for _, row in tqdm_iterator:
-        if 'src' in df.columns:
-            text = row['src']
-        else:
-            text = row['en']
-        if 'direction' in df.columns:
-            src_lang, tgt_lang = row['direction'].split('-')
-            src_col = 'src'
-        else:
-            src_lang, tgt_lang = 'en', 'ko'
-            src_col = 'en'
+#     tqdm_iterator = tqdm(df.iloc[start_idx:].iterrows(), total=len(df) - start_idx, desc='Google translating')
+#     for _, row in tqdm_iterator:
+#         if 'src' in df.columns:
+#             text = row['src']
+#         else:
+#             text = row['en']
+#         if 'direction' in df.columns:
+#             src_lang, tgt_lang = row['direction'].split('-')
+#             src_col = 'src'
+#         else:
+#             src_lang, tgt_lang = 'en', 'ko'
+#             src_col = 'en'
 
-        if error_occurred:
-            print(f"Error Occured - Google:\n{error_message}")
-            translations.extend([None] * (len(df[src_col]) - len(translations)))
-            elapsed_times.extend([None] * (len(df[src_col]) - len(elapsed_times)))
-            break
+#         if error_occurred:
+#             print(f"Error Occured - Google:\n{error_message}")
+#             translations.extend([None] * (len(df[src_col]) - len(translations)))
+#             elapsed_times.extend([None] * (len(df[src_col]) - len(elapsed_times)))
+#             break
 
-        try:
-            start_time = datetime.now()
-            translation = translator.translate(src=src_lang, dest=tgt_lang, text=text).text
-            end_time = datetime.now()
-            elapsed_time = round((end_time - start_time).total_seconds() * 1000, 1)
-            if print_result:
-                print(f"[INPUT] {text}")
-                print(f"[OUTPUT] {translation}")
-                print(f"[ELAPSED TIME] {elapsed_time} ms")
+#         try:
+#             start_time = datetime.now()
+#             translation = translator.translate(src=src_lang, dest=tgt_lang, text=text).text
+#             end_time = datetime.now()
+#             elapsed_time = round((end_time - start_time).total_seconds() * 1000, 1)
+#             if print_result:
+#                 print(f"[INPUT] {text}")
+#                 print(f"[OUTPUT] {translation}")
+#                 print(f"[ELAPSED TIME] {elapsed_time} ms")
 
-        except Exception as e:
-            error_message = e
-            error_occurred = True
-            translation = None
-            elapsed_time = None
+#         except Exception as e:
+#             error_message = e
+#             error_occurred = True
+#             translation = None
+#             elapsed_time = None
         
-        translations.append(translation)
-        elapsed_times.append(elapsed_time)
+#         translations.append(translation)
+#         elapsed_times.append(elapsed_time)
 
-    df['google_trans'] = translations
-    df['google_time'] = elapsed_times
+#     df['google_trans'] = translations
+#     df['google_time'] = elapsed_times
 
-    return df
+#     return df
 
 
-def deepl_translate_df(df, client_key=DEEPL_CLIENT_KEY, src_col='src', tgt_lang='ko', print_result=True):
+def deepl_translate_df(df, client_key=DEEPL_CLIENT_KEY, src_col=None, src_lang=None, tgt_lang=None, print_result=True):
     """
     Translates the source column of a DataFrame using the DeepL API.
 
@@ -327,8 +339,11 @@ def deepl_translate_df(df, client_key=DEEPL_CLIENT_KEY, src_col='src', tgt_lang=
     for _, row in tqdm_iterator:
         text = row[src_col] if not pd.isna(row[src_col]) else '<|empty_word|>'
         if 'direction' in df.columns:
-            _, tgt_lang = row['direction'].split('-')
+            src_lang, tgt_lang = row['direction'].split('-')
             src_col = 'src'
+
+        if src_lang == None or tgt_lang == None or src_col == None:
+            raise ValueError("Please provide the 'src_lang', 'tgt_lang', and 'src_col' parameters.")
 
         if error_occurred:
             print(f"Error Occured - DeepL:\n{error_message}")
@@ -338,7 +353,9 @@ def deepl_translate_df(df, client_key=DEEPL_CLIENT_KEY, src_col='src', tgt_lang=
 
         try:
             start_time = datetime.now()
-            translation = translator.translate_text(target_lang=DEEPL_LANGCODES[tgt_lang], text=text)
+            translation = translator.translate_text(source_lang=DEEPL_LANGCODES_SRC[src_lang],
+                                                    target_lang=DEEPL_LANGCODES_TGT[tgt_lang], 
+                                                    text=text)
             end_time = datetime.now()
             elapsed_time = round((end_time - start_time).total_seconds() * 1000, 1)
             if print_result:
@@ -351,6 +368,7 @@ def deepl_translate_df(df, client_key=DEEPL_CLIENT_KEY, src_col='src', tgt_lang=
             error_occurred = True
             translation = None
             elapsed_time = None
+            print(f"Error Occurred in DeepL: {e}")
 
         translations.append(translation)
         elapsed_times.append(elapsed_time)
@@ -384,7 +402,7 @@ def translate_df(df, translator='google', **kwargs):
     """
     trans_dict = {
         'papago': papago_translate_df,
-        'google': google_translate_df,
+        # 'google': google_translate_df,
         'deepl': deepl_translate_df
     }
     translator = trans_dict[translator]
@@ -406,6 +424,7 @@ def main():
         'sample': '../results/sample.csv',
         'ko_words': '../results/ko_5.8k.csv',
         'en_words': '../results/en_10k.csv',
+        'mmt': '../results/mmt/mmt_flores_test_for_deepl_bidir_inferenced.csv',
     }
     file_path = file_path_dict[args.dataset]
 
@@ -420,10 +439,12 @@ def main():
     # deepl
     deepl_client_keys = [
         DEEPL_CLIENT_KEY, # 세형
+        # DEEPL_CLIENT_KEY_1, # 성환님
+        DEEPL_CLIENT_KEY_2, # 현경님
     ]
     eval_df = pd.read_csv(file_path)
     for client_key in deepl_client_keys:
-        eval_df = translate_df(eval_df, translator=args.translator, client_key=client_key, src_col='en', tgt_lang='ko', print_result=True)
+        eval_df = translate_df(eval_df, translator=args.translator, client_key=client_key, src_col='src', print_result=True)
         eval_df.to_csv(file_path, index=False)
 
 

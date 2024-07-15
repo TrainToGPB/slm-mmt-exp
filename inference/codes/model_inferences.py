@@ -29,7 +29,7 @@ Notes:
 # built-in
 import os
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-os.environ['CUDA_VISIBLE_DEVICES'] = '0,1,2,3'
+os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 os.environ['VLLM_USE_MODELSCOPE'] = 'false'
 import re
 import sys
@@ -116,6 +116,15 @@ def load_model_and_tokenizer(model_type):
         'llama-3-koja-scaled-halfja-prime-base-zh-qlora-bf16-vllm': ('/data/sehyeong/nmt/models/mmt_ft/ko-zh/koja-halfja-merged', None, AutoTokenizer),
         'llama-3-kojazh-scaled-equal-prime-base-zh-qlora-bf16-vllm': ('/data/sehyeong/nmt/models/mmt_ft/ko-zh/kojazh-equal-merged', None, AutoTokenizer),
         'gemma-mling-prime-base-zh-qlora-bf16-vllm': ('/data/sehyeong/nmt/models/mmt_ft/gemma/kozh-merged', None, AutoTokenizer),
+
+        # MMT
+        'llama-3-prime-base-mmt-qlora-bf16-vllm': ('/data/sehyeong/nmt/models/mmt_ft/ko-enjazh/baseline-merged', None, AutoTokenizer),
+        'llama-3-ko-prime-base-mmt-qlora-bf16-vllm': ('/data/sehyeong/nmt/models/mmt_ft/ko-enjazh/ko-merged', None, AutoTokenizer),
+        'llama-3-kojazh-prime-base-mmt-qlora-bf16-vllm': ('/data/sehyeong/nmt/models/mmt_ft/ko-enjazh/kojazh-merged', None, AutoTokenizer),
+        'llama-3-kojazh-halfall-prime-base-mmt-qlora-bf16-vllm': ('/data/sehyeong/nmt/models/mmt_ft/ko-enjazh/kojazh-half-all-merged', None, AutoTokenizer),
+        'llama-3-kojazh-equal-prime-base-mmt-qlora-bf16-vllm': ('/data/sehyeong/nmt/models/mmt_ft/ko-enjazh/kojazh-equal-merged', None, AutoTokenizer),
+        'llama-3-kojazh-halfjazh-prime-base-mmt-qlora-bf16-vllm': ('/data/sehyeong/nmt/models/mmt_ft/ko-enjazh/kojazh-half-jazh-merged', None, AutoTokenizer),
+        'llama-3-kojazh-quarterjazh-prime-base-mmt-qlora-bf16-vllm': ('/data/sehyeong/nmt/models/mmt_ft/ko-enjazh/kojazh-quarter-jazh-merged', None, AutoTokenizer),
 
         # Word translation
         'llama-3-ko-prime-base-word-mix-all-bidir-qlora-bf16-vllm': (os.path.join(SCRIPT_DIR, '../../training/llama_qlora/models/llama3-word-mix-all-bidir-merged-bf16'), None, AutoTokenizer),
@@ -397,6 +406,7 @@ if __name__ == '__main__':
             'en_words': os.path.join(SCRIPT_DIR, "../results/words/en_word_test_1k.csv"),
             'ja': os.path.join(SCRIPT_DIR, "../results/mmt/ja_test_bidir_inferenced.csv"),
             'zh': os.path.join(SCRIPT_DIR, "../results/mmt/zh_test_bidir_inferenced.csv"),
+            'mmt': os.path.join(SCRIPT_DIR, "../results/mmt/mmt_flores_test_bidir_inferenced.csv"),
         }
         file_path = file_path_dict[dataset]
 
@@ -431,6 +441,13 @@ if __name__ == '__main__':
         'llama-3-kojazh-equal-prime-base-zh': 'llama-3-kojazh-scaled-equal-prime-base-zh-qlora-bf16-vllm',
         'gemma-prime-base-ja': 'gemma-mling-prime-base-ja-qlora-bf16-vllm',
         'gemma-prime-base-zh': 'gemma-mling-prime-base-zh-qlora-bf16-vllm',
+        'llama-3-prime-base-mmt': 'llama-3-prime-base-mmt-qlora-bf16-vllm',
+        'llama-3-ko-prime-base-mmt': 'llama-3-ko-prime-base-mmt-qlora-bf16-vllm',
+        'llama-3-kojazh-prime-base-mmt': 'llama-3-kojazh-prime-base-mmt-qlora-bf16-vllm',
+        'llama-3-kojazh-halfall-prime-base-mmt': 'llama-3-kojazh-halfall-prime-base-mmt-qlora-bf16-vllm',
+        'llama-3-kojazh-equal-prime-base-mmt': 'llama-3-kojazh-equal-prime-base-mmt-qlora-bf16-vllm',
+        'llama-3-kojazh-halfjazh-prime-base-mmt': 'llama-3-kojazh-halfjazh-prime-base-mmt-qlora-bf16-vllm',
+        'llama-3-kojazh-quarterjazh-prime-base-mmt': 'llama-3-kojazh-quarterjazh-prime-base-mmt-qlora-bf16-vllm',
         'llama-3-ko-mix-all-bidir': 'llama-3-ko-prime-base-en-word-mix-all-bidir-qlora-bf16-vllm',
     }
     
@@ -445,7 +462,7 @@ if __name__ == '__main__':
         print(f"Sentence: {args.sentence}")
 
     if args.inference_type == 'dataset':
-        source_column = "src"
+        source_column = "en"
         target_column = model_type + '_trans'
         inference(
             model_type, 
