@@ -74,7 +74,8 @@ def calculate_token_len(df, tokenizer, col):
     if col != 'src' and col != 'tgt' and not col.endswith('_trans'):
         raise ValueError("Column name should be either 'src' or 'tgt', or ends with '_trans'")
     token_lens = [len(tokenizer.tokenize(text)) for text in df[col]]
-    df.insert(df.columns.get_loc(col) + 1, col.replace('_trans', '_len'), token_lens)
+    len_col = col.replace('_trans', '_len') if '_trans' in col else col + '_len'
+    df.insert(df.columns.get_loc(col) + 1, len_col, token_lens)
     return df
 
 
@@ -123,7 +124,6 @@ def make_eval_dict(results, direction_cols, data_source_cols, save_yaml_path, me
 
     eval_dict = read_eval_dict_yaml(save_yaml_path)
     for direction in direction_cols:
-        src_lang = direction.split('2')[0]
         source_dict = dict() if direction not in eval_dict.keys() else eval_dict[direction]
         for data_source in data_source_cols:
             score_dict = dict() if data_source not in source_dict.keys() else source_dict[data_source]
@@ -135,7 +135,7 @@ def make_eval_dict(results, direction_cols, data_source_cols, save_yaml_path, me
                 if direction in eval_dict.keys() and data_source in eval_dict[direction].keys() and column in eval_dict[direction][data_source].keys():
                     continue
 
-                target_data = results[results['data_source'].str.startswith(data_source) & results['direction'].str.startswith(src_lang)]
+                target_data = results[(results['data_source'].str.startswith(data_source)) & (results['direction'] == direction)]
                 
                 print(f"Calculating {metric_type.upper()} of {direction.upper()}-{data_source.upper()}: {column}...")
                 if metric_type == 'xcomet':
@@ -145,7 +145,8 @@ def make_eval_dict(results, direction_cols, data_source_cols, save_yaml_path, me
                 elif metric_type == 'bleu':
                     score_dict[column] = calculate_sacrebleu(target_data, column, 'tgt')
 
-            print(score_dict)
+            if print_dict:
+                print(score_dict)
             
             source_dict[data_source] = score_dict
         eval_dict[direction] = source_dict
@@ -213,6 +214,7 @@ def main():
         'zh-base-train': '../results/mmt/zh_base_train.csv',
         'ja': '../results/mmt/ja_test_bidir_inferenced.csv',
         'zh': '../results/mmt/zh_test_bidir_inferenced.csv',
+        'mmt': '../results/mmt/mmt_flores_test_bidir_inferenced.csv', 
     }
     results_path = results_path_dict[args.results_type]
     results = pd.read_csv(results_path)
@@ -231,7 +233,7 @@ def main():
 
     for col in results.columns:
         if col.endswith('_trans') or col == 'src' or col == 'tgt':
-            if col.replace('_trans', '_len') in results.columns:
+            if (col.replace('_trans', '_len') in results.columns) or (col + '_len' in results.columns) and (col != 'src' and col != 'tgt'):
                 continue
             if 'gemma' in col:
                 tokenizer = AutoTokenizer.from_pretrained('google/gemma-7b')
@@ -241,8 +243,8 @@ def main():
     results.to_csv(results_path, index=False)
 
     if args.eval_type == 'eval_dict':
-        direction_cols = ['ja2ko', 'ko2ja']
-        data_source_cols = ['aihub']
+        direction_cols = results['direction'].unique()
+        data_source_cols = ['aihub', 'flores']
 
         save_path = results_path.replace('inferenced', f'{args.metric_type}').replace('.csv', '.yaml')
         make_eval_dict(results, direction_cols, data_source_cols, save_path, metric_type=args.metric_type, print_dict=True)
@@ -251,7 +253,7 @@ def main():
         save_line_by_line_metrics(results, save_path=results_path, metric_type=args.metric_type, src_col=args.results_type[:2], ref_col=None)
 
     elif args.eval_type == 'all':
-        direction_cols = ['en2ko', 'ko2en']
+        direction_cols = ['en-ko', 'ko-en']
         data_source_cols = ['aihub', 'flores']
 
         save_path = results_path.replace('inferenced', f'{args.metric_type}').replace('.csv', '.yaml')
