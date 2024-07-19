@@ -138,7 +138,7 @@ def load_model_and_tokenizer(args):
     print(f"EOS token: {tokenizer.eos_token}")
     print(f"EOS token id: {tokenizer.eos_token_id}")
     tokenizer.add_eos_token = True
-    tokenizer.padding_side = 'right' # 원래 left가 맞다?
+    tokenizer.padding_side = 'left' # 원래 left가 맞다?
     tokenizer.model_max_length = args.max_length
 
     src_token, tgt_token = "<|src|>", "<|tgt|>"
