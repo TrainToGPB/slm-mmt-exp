@@ -1,54 +1,44 @@
-## enko_translation
+## MMT-SPARTA-LARGE
 
 ### Purpose
-1. LLaMA 2 기반 영-한 번역 모델 실험 및 QLoRA 활용
-2. 파파고, 구글, 딥엘 등 상용 번역 API와의 성능 비교
+- LLaMA를 기반으로 한 SPARTA-large 다국어 번역 모델 개발
+
+### Model Configuration
+- PLM: [`meta-llama/Meta-Llama-3-8B`](https://huggingface.co/meta-llama/Meta-Llama-3-8B)
+
+  - 위 모델에서 한/일/중 언어를 continually pretrain한 다음 모델들도 활용
+  - KO: [`beomi/Llama-3-Open-Ko-8B`](https://huggingface.co/beomi/Llama-3-Open-Ko-8B)
+  - JA: [`rinna/llama-3-youko-8b`](https://huggingface.co/rinna/llama-3-youko-8b)
+  - ZH: [`hfl/llama-3-chinese-8b`](https://huggingface.co/hfl/llama-3-chinese-8b)
+
+- Dataset: AI Hub의 한-영, 한-일, 한-중 병렬 번역 말뭉치 데이터 병합 활용
+
+  - 총 병합 데이터
+
+    - 한-영: 총 10M
+    - 한-일: 총 4.3M
+    - 한-중: 총 5.9M
+
+  - 고품질 데이터: [xCOMET](https://huggingface.co/Unbabel/XCOMET-XL) 점수에 기반한 고품질 데이터 추출
+
+    - 한-영, 한-일, 한-중 각 100K 씩 추출해, MMT-Prime-300K 데이터셋 구성
+
+  - Inference: Paged KV caching 기반 [vLLM](https://github.com/vllm-project/vllm) 툴 활용
+
+    - 단일 추론 시: 약 115 tokens/sec (Transformers 약 35 tokens/sec)
+    - 배치 추론 시: 약 4000 tokens/sec (128 배치 기준)
 
 ### Usage
-#### 0. Basic settings
-  __a. mkl-fft 설치__
-  ```bash
-  conda install -c intel mkl_fft
-  ```
+#### Model
+- 현재 모델은 DGX H100 서버(114.110.129.131) 내 `/data/sehyeong/nmt/models/mmt_ft` 폴더에 존재
 
-  __b. requirements 설치__
-  ```
-  pip install -r requirements.txt
-  ```
+  - 가장 고성능 모델은 LLaMA3-KO에 MMT-Prime-300K를 학습시킨 모델
+  - 어댑터: `/data/sehyeong/nmt/models/mmt_ft/ko-enjazh/ko`
+  - 병합: `/data/sehyeong/nmt/models/mmt_ft/ko-enjazh/ko-merged`
+  - 추후 61 서버로 모델 파일 이동 예정
 
-#### 1. `app.py` 이용 (recommended)
-```bash
-streamlit run ./app.py --server.fileWatcherType=none --server.port=30001
-```
+#### Inference
+- 추후 작성 예정
 
-#### 2. `model_inferences.py` 이용
-```bash
-python ./inference/codes/model_inferences.py
-```
-__Arguments__
-
-__`--model_type`__ (default: `llama-bf16`)
-- `mbart`: [facebook/mbart-large-50-many-to-many-mmt](https://huggingface.co/facebook/mbart-large-50-many-to-many-mmt)
-- `nllb`: [facebook/nllb-200-distilled-600M](https://huggingface.co/facebook/nllb-200-distilled-600M)
-- `madlad`: [google/madlad400-3b-mt](https://huggingface.co/google/madlad400-3b-mt)
-- `llama`: [LLaMA-QLoRA finetuned](https://huggingface.co/traintogpb/llama-2-en2ko-translator-7b-qlora-adapter)
-- `llama-bf16`: [LLaMA-QLoRA finetuned + BF16 upscaled & merged](https://huggingface.co/traintogpb/llama-2-en2ko-translator-7b-qlora-bf16-upscaled)
-- `llama-bf16-vllm`: [LLaMA-QLoRA finetuned + BF16 upscaled & merged](https://huggingface.co/traintogpb/llama-2-en2ko-translator-7b-qlora-bf16-upscaled) + vLLM inference
-- `llama-sparta`: [LLaMA-QLoRA finetuned](https://huggingface.co/traintogpb/llama-2-enko-translator-7b-qlora-adapter) with [traintogpb/aihub-flores-koen-integrated-sparta-30k](https://huggingface.co/datasets/traintogpb/aihub-flores-koen-integrated-sparta-30k)
-
-__`--inference_type`__ (default: `sentence`)
-- `sentence`: 입력 문장 번역
-- `dataset`: csv 데이터셋 번역
-
-__`--dataset`__ (default: `sample`)
-- `--inference_type=dataset`인 경우 사용 가능
-- `sample`: `sample_texts_for_inferences.csv`
-- `aihub`: `inference/results/test_tiny_uniform100_inferenced.csv` (사용 불가, 업로드 안 돼있음)
-- `flores`: `inference/results/test_flores_inferenced.csv` (사용 불가, 업로드 안 돼있음)
-- `sparta`: `inference/results/test_sparta_bidir_inferenced.csv` (사용 불가, 업로드 안 돼있음)
-- 따로 추가한 파일의 경로 입력 가능
-
-__`--sentence`__ (default: `"NMIXX is a South Korean girl group that made a comeback on January 15, 2024 with their new song 'DASH'."`)
-- `--inference_type=sentence`인 경우 사용 가능
-- 번역하고자 하는 영어 문장 자유롭게 입력
-
+#### Demo (Streamlit)
+- 추후 작성 예정
