@@ -215,8 +215,8 @@ def main():
         'zh-base-train': '../results/mmt/zh_base_train.csv',
         'ja': '../results/mmt/ja_test_bidir_inferenced.csv',
         'zh': '../results/mmt/zh_test_bidir_inferenced.csv',
-        'mmt': '../results/mmt/mmt_flores_test_bidir_inferenced.csv', 
-        'mmt-m2m': '../results/mmt/mmt_flores_m2m_test_bidir_inferenced.csv',
+        'mmt': '../results/mmt/mmt_test_bidir_inferenced.csv', 
+        'mmt-m2m': '../results/mmt/mmt_m2m_test_bidir_inferenced.csv',
     }
     results_path = results_path_dict[args.results_type]
     results = pd.read_csv(results_path)
@@ -240,7 +240,10 @@ def main():
 
     if args.eval_type == 'eval_dict':
         direction_cols = results['direction'].unique()
-        data_source_cols = ['aihub', 'flores']
+        data_source_cols = [
+            # 'aihub', 
+            'flores'
+        ]
 
         save_path = results_path.replace('inferenced', f'{args.metric_type}').replace('.csv', '.yaml')
         make_eval_dict(results, direction_cols, data_source_cols, save_path, metric_type=args.metric_type, print_dict=True)
