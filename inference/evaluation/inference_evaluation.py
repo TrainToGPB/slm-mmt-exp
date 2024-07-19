@@ -76,6 +76,7 @@ def calculate_token_len(df, tokenizer, col):
     token_lens = [len(tokenizer.tokenize(text)) for text in df[col]]
     len_col = col.replace('_trans', '_len') if '_trans' in col else col + '_len'
     df.insert(df.columns.get_loc(col) + 1, len_col, token_lens)
+    print(f"Token length of column '{col}' calculated.")
     return df
 
 
@@ -215,6 +216,7 @@ def main():
         'ja': '../results/mmt/ja_test_bidir_inferenced.csv',
         'zh': '../results/mmt/zh_test_bidir_inferenced.csv',
         'mmt': '../results/mmt/mmt_flores_test_bidir_inferenced.csv', 
+        'mmt-m2m': '../results/mmt/mmt_flores_m2m_test_bidir_inferenced.csv',
     }
     results_path = results_path_dict[args.results_type]
     results = pd.read_csv(results_path)
@@ -223,17 +225,11 @@ def main():
     model_name = 'meta-llama/Meta-Llama-3-8B'
     tokenizer = AutoTokenizer.from_pretrained(model_name)
 
-    # ko2ja_results = results[results['direction'].str.startswith('ko')]
-    # ja2ko_results = results[results['direction'].str.startswith('ja')]
-    # sacrebleu_ko2ja = calculate_sacrebleu(ko2ja_results, 'gemma-mling-prime-base-ja-qlora-bf16-vllm_trans', 'tgt')
-    # sacrebleu_ja2ko = calculate_sacrebleu(ja2ko_results, 'gemma-mling-prime-base-ja-qlora-bf16-vllm_trans', 'tgt')
-
-    # print(f"KO2JA BLEU: {sacrebleu_ko2ja}")
-    # print(f"JA2KO BLEU: {sacrebleu_ja2ko}")
-
     for col in results.columns:
         if col.endswith('_trans') or col == 'src' or col == 'tgt':
-            if (col.replace('_trans', '_len') in results.columns) or (col + '_len' in results.columns) and (col != 'src' and col != 'tgt'):
+            if (col != 'src' and col != 'tgt') and (col.replace('_trans', '_len') in results.columns):
+                continue
+            if (col == 'src' or col == 'tgt') and (col + '_len' in results.columns):
                 continue
             if 'gemma' in col:
                 tokenizer = AutoTokenizer.from_pretrained('google/gemma-7b')
