@@ -1,0 +1,4 @@
+[server]
+fileWatcherType = "poll"
+port = 30003
+baseUrlPath = "tmaxcoreai-ca213-translation-demo"
