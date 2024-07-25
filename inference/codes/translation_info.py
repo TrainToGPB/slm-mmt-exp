@@ -8,8 +8,15 @@ MODEL_BASE_DIR = '/data/sehyeong/nmt/models'
 SEED = 42
 MAX_LENGTH = 1024
 
+TENSOR_PARALLEL_SIZE = 1
 VLLM_VRAM_LIMIT = 0.95
 VLLM_MAX_LORA_RANK = 64
+
+GPT_SYSTEM_PROMPT = """
+You are a word translator for English, 한국어, 日本語, and 中文.
+Translate the following words into the target language.
+Say only the translated word, not any other information.
+"""
 
 MODEL_MAPPING = {
     # PLM
@@ -127,7 +134,7 @@ ADAPTER_MAPPING = {
 }
 
 DF_PATH_DICT = {
-    'sample': os.path.join(SCRIPT_DIR, "../results/sample.csv"),
+    'sample': os.path.join(SCRIPT_DIR, "../results/others/sample.csv"),
     'aihub': os.path.join(SCRIPT_DIR, "../results/test_tiny_uniform100_inferenced.csv"),
     'flores': os.path.join(SCRIPT_DIR, "../results/test_flores_inferenced.csv"),
     'prime-api': os.path.join(SCRIPT_DIR, "../results/prime/test_sparta_bidir_api_inferenced.csv"),
@@ -140,7 +147,12 @@ DF_PATH_DICT = {
     'zh': os.path.join(SCRIPT_DIR, "../results/mmt/zh_test_bidir_inferenced.csv"),
     'mmt': os.path.join(SCRIPT_DIR, "../results/mmt/mmt_test_bidir_inferenced.csv"),
     'mmt-m2m': os.path.join(SCRIPT_DIR, "../results/mmt/mmt_m2m_test_bidir_inferenced.csv"),
-    'mmt-test': os.path.join(SCRIPT_DIR, "../results/mmt/mmt_test_bidir_inferenced.csv"),
+    'mmt-sample': os.path.join(SCRIPT_DIR, "../results/others/mmt_sample.csv"),
+    'gaia': os.path.join(SCRIPT_DIR, "../results/gaia_test/gaia_works_string_translated_ca213.csv"),
+    'mmt-words-en': os.path.join(SCRIPT_DIR, "../results/words/mmt/en_10k.csv"),
+    'mmt-words-ko': os.path.join(SCRIPT_DIR, "../results/words/mmt/ko_17.4k_extended.csv"),
+    'mmt-words-ja': os.path.join(SCRIPT_DIR, "../results/words/mmt/ja_10k.csv"),
+    'mmt-words-zh': os.path.join(SCRIPT_DIR, "../results/words/mmt/zh_10k.csv"),
 }
 
 DEEPL_LANG_CODE = {
