@@ -1,0 +1,26 @@
+model:
+  model_name: gpt
+  lora_type: None
+  adapter_name: None
+  model_type: api
+  torch_dtype: bfloat16
+  max_length: 1024
+  seed: 42
+
+data:
+  prompt_type: llama
+  data_type: dataset
+  sentence:
+    text: "안녕하세요. 티맥스 코어에이아이 연구 2본부 1-3팀입니다."
+  dataset:
+    dataset_name: mmt-words-ko
+    tgt_col: word
+    lang_col: direction
+    trans_col: gpt_trans
+    time_col: gpt_time
+
+infer:
+  batch_size: 128
+  src_lang: ko
+  tgt_lang: en
+  print_result: True
