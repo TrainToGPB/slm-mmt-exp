@@ -18,12 +18,13 @@ def parse_arguments_mbart(yaml_path):
     parser = argparse.ArgumentParser()
 
     # train config
+    parser.add_argument('--plm_name', type=str, default=train_config['plm_name'], help="Pretrained language model name (from HuggingFace)")
+    parser.add_argument('--use_fsdp', type=lambda x: (str(x).lower() == 'true'), default=train_config['use_fsdp'], help="Use fully-sharded data parallel")
+    parser.add_argument('--torch_dtype', type=str, default=train_config['torch_dtype'], help="Torch compute dtype: float16, bfloat16, float32")
     parser.add_argument('--seed', type=int, default=train_config['seed'], help="Random seed")
     parser.add_argument('--output_dir', type=str, default=train_config['output_dir'], help="Output directory")
-    parser.add_argument('--plm_name', type=str, default=train_config['plm_name'], help="Pretrained language model name (from HuggingFace)")
     parser.add_argument('--src_lang', type=str, default=train_config['src_lang'], help="Source language")
     parser.add_argument('--tgt_lang', type=str, default=train_config['tgt_lang'], help="Target language")
-    parser.add_argument('--use_fsdp', type=lambda x: (str(x).lower() == 'true'), default=train_config['use_fsdp'], help="Use Fully-Sharded Data Parallel")
     parser.add_argument('--max_length', type=int, default=train_config['max_length'], help="Max sequence length of encoder and decoder")
     parser.add_argument('--dataloader_num_workers', type=int, default=train_config['dataloader_num_workers'], help="Number of dataloader workers")
     parser.add_argument('--per_device_batch_size', type=int, default=train_config['per_device_batch_size'], help="Per device train/eval batch size")
@@ -137,17 +138,17 @@ def parse_arguments_llama(yaml_path):
 
     # qlora config
     parser.add_argument('--use_4bit', type=lambda x: (str(x).lower() == 'true'), default=qlora_config['use_4bit'], help="Use 4-bit quantization")
-    parser.add_argument('--use_8bit', type=lambda x: (str(x).lower() == 'true'), default=qlora_config['use_8bit'], help="Use 8-bit quantization")
     parser.add_argument('--bnb_4bit_quant_type', type=str, default=qlora_config['bnb_4bit_quant_type'], help="BnB 4-bit quantization type")
     parser.add_argument('--bnb_4bit_compute_dtype', type=str, default=qlora_config['bnb_4bit_compute_dtype'], help="BnB 4-bit compute dtype")
     parser.add_argument('--use_double_quant', type=lambda x: (str(x).lower() == 'true'), default=qlora_config['use_double_quant'], help="Use double quantization")
+    parser.add_argument('--use_lora', type=lambda x: (str(x).lower() == 'true'), default=qlora_config['use_lora'], help="Use LoRA or not")
+    parser.add_argument('--use_mora', type=lambda x: (str(x).lower() == 'true'), default=qlora_config['use_mora'], help="Use MoRA or not (can be used only when LoRA is used)")
+    parser.add_argument('--mora_type', type=int, default=qlora_config['mora_type'], help="MoRA type")
     parser.add_argument('--lora_alpha', type=int, default=qlora_config['lora_alpha'], help="LoRA alpha")
     parser.add_argument('--lora_dropout', type=float, default=qlora_config['lora_dropout'], help="LoRA dropout")
     parser.add_argument('--lora_r', type=int, default=qlora_config['lora_r'], help="LoRA r")
     parser.add_argument('--lora_target_modules', type=lambda x: x.split(','), default=qlora_config['lora_target_modules'], help="Modules where LoRA will adapt")
     parser.add_argument('--lora_target_layers', type=str, default=qlora_config['lora_target_layers'], help="Layers where LoRA will adapt: all, odd, even")
-    parser.add_argument('--use_mora', type=lambda x: (str(x).lower() == 'true'), default=qlora_config['use_mora'], help="Use MoRA or not")
-    parser.add_argument('--mora_type', type=int, default=qlora_config['mora_type'], help="MoRA type")
 
     # general config
     parser.add_argument('--project_name', type=str, default=general_config['project_name'], help="WandB project name")

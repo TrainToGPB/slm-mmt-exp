@@ -18,7 +18,7 @@ Notes:
 # built-in
 import os
 import sys
-os.environ['CUDA_VISIBLE_DEVICES'] = '0,1,2,3'
+os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 os.environ['TOKENIZERS_PARALLELISM'] = 'false'
 from collections import defaultdict
 
@@ -30,7 +30,7 @@ import bert_score
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
-from datasets import Dataset, DatasetDict
+from datasets import Dataset
 from datasets import load_dataset
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from peft import LoraConfig
@@ -61,36 +61,24 @@ HF_DATASETS_CACHE_DIR = "/data/.cache/datasets/"
 
 
 def load_model_and_tokenizer(args):
-    """
-    Load the model and tokenizer with the specified configuration
-
-    Args:
-    - plm_name (str): The name of the pre-trained language model
-    - device_map (int): The device map
-    - max_length (int): The maximum length of the text
-    - use_gradient_checkpointing (bool): Whether to use gradient checkpointing
-    - bnb_config (BitsAndBytesConfig): The BitsAndBytesConfig
-    - lora_config (LoraConfig): The LoraConfig
-
-    Returns:
-    - model (PreTrainedModel): The model
-    - tokenizer (PreTrainedTokenizer): The tokenizer
-    """
-    compute_dtype = getattr(torch, args.bnb_4bit_compute_dtype)
-    bnb_config = BitsAndBytesConfig(
-        load_in_4bit=args.use_4bit,
-        bnb_4bit_quant_type=args.bnb_4bit_quant_type,
-        bnb_4bit_compute_dtype=compute_dtype,
-        bnb_4bit_use_double_quant=args.use_double_quant
-    )
+    if args.use_4bit:
+        quantization_config = BitsAndBytesConfig(
+            load_in_4bit=args.use_4bit,
+            bnb_4bit_quant_type=args.bnb_4bit_quant_type,
+            bnb_4bit_compute_dtype=args.bfb_4bit_compute_dtype,
+            bnb_4bit_use_double_quant=args.use_double_quant
+        )
+    else:
+        quantization_config = None
 
     device_index = Accelerator().process_index
     device_map = {"": device_index}
 
+    compute_dtype = getattr(torch, args.torch_dtype)
     model = AutoModelForCausalLM.from_pretrained(
         args.plm_name,
-        quantization_config=bnb_config,
-        torch_dtype=bnb_config.bnb_4bit_compute_dtype,
+        quantization_config=quantization_config,
+        torch_dtype=compute_dtype,
         attn_implementation='flash_attention_2',
         device_map=device_map,
         cache_dir=HF_MODEL_CACHE_DIR,
@@ -98,37 +86,53 @@ def load_model_and_tokenizer(args):
     model.config.use_cache = False
     model.config.pretraining_tp = 1
 
-    modules = args.lora_target_modules
-    print("LoRA adapted modules:", modules)
-    print("LoRA target layers:", args.lora_target_layers.upper())
-    if args.lora_target_layers == 'all':
-        target_layer_indices = [i for i in range(len(model.model.layers))]
-    elif args.lora_target_layers == 'odd':
-        target_layer_indices = [i for i in range(len(model.model.layers)) if i % 2 == 1]
-    elif args.lora_target_layers == 'even':
-        target_layer_indices = [i for i in range(len(model.model.layers)) if i % 2 == 0]
-    
-    if args.use_mora:
-        lora_config = LoraConfig(
-            use_mora=args.use_mora,
-            mora_type=args.mora_type,
-            lora_dropout=args.lora_dropout,
-            r=args.lora_r,
-            bias='none',
-            target_modules=modules,
-            task_type='CAUSAL_LM',
-            layers_to_transform=target_layer_indices,
+    if args.use_lora:
+        modules = args.lora_target_modules
+        print("LoRA adapted modules:", modules)
+        print("LoRA target layers:", args.lora_target_layers.upper())
+        if args.lora_target_layers == 'all':
+            target_layer_indices = [i for i in range(len(model.model.layers))]
+        elif args.lora_target_layers == 'odd':
+            target_layer_indices = [i for i in range(len(model.model.layers)) if i % 2 == 1]
+        elif args.lora_target_layers == 'even':
+            target_layer_indices = [i for i in range(len(model.model.layers)) if i % 2 == 0]
+        
+        if args.use_mora:
+            lora_config = LoraConfig(
+                use_mora=args.use_mora,
+                mora_type=args.mora_type,
+                lora_dropout=args.lora_dropout,
+                r=args.lora_r,
+                bias='none',
+                target_modules=modules,
+                task_type='CAUSAL_LM',
+                layers_to_transform=target_layer_indices,
+            )
+        else:
+            lora_config = LoraConfig(
+                lora_alpha=args.lora_alpha,
+                lora_dropout=args.lora_dropout,
+                r=args.lora_r,
+                bias='none',
+                target_modules=modules,
+                task_type='CAUSAL_LM',
+                layers_to_transform=target_layer_indices,
+            )
+        
+        if hasattr(model, "enable_input_require_grads"):
+            model.enable_input_require_grads()
+        else:
+            def make_inputs_require_grad(module, input, output):
+                output.requires_grad_(True)
+            model.get_input_embeddings().register_forward_hook(make_inputs_require_grad)
+
+        model = prepare_model_for_kbit_training(
+            model, 
+            use_gradient_checkpointing=args.gradient_checkpointing,
+            gradient_checkpointing_kwargs={"use_reentrant": True}
         )
-    else:
-        lora_config = LoraConfig(
-            lora_alpha=args.lora_alpha,
-            lora_dropout=args.lora_dropout,
-            r=args.lora_r,
-            bias='none',
-            target_modules=modules,
-            task_type='CAUSAL_LM',
-            layers_to_transform=target_layer_indices,
-        )
+        model = get_peft_model(model, lora_config)
+        model.print_trainable_parameters()
 
     tokenizer = AutoTokenizer.from_pretrained(args.plm_name, trust_remote_code=True)
     tokenizer.eos_token_id = args.eos_token_id
@@ -138,7 +142,7 @@ def load_model_and_tokenizer(args):
     print(f"EOS token: {tokenizer.eos_token}")
     print(f"EOS token id: {tokenizer.eos_token_id}")
     tokenizer.add_eos_token = True
-    tokenizer.padding_side = 'left' # 원래 left가 맞다?
+    tokenizer.padding_side = 'left' # Decoder 기반 모델의 경우 left가 맞음
     tokenizer.model_max_length = args.max_length
 
     src_token, tgt_token = "<|src|>", "<|tgt|>"
@@ -146,89 +150,16 @@ def load_model_and_tokenizer(args):
     print(f"Added tokens: {src_token}, {tgt_token}")
     print(f"Added token ids: {tokenizer.convert_tokens_to_ids([src_token, tgt_token])}")
 
-    if hasattr(model, "enable_input_require_grads"):
-        model.enable_input_require_grads()
-    else:
-        def make_inputs_require_grad(module, input, output):
-            output.requires_grad_(True)
-        model.get_input_embeddings().register_forward_hook(make_inputs_require_grad)
-
-    model = prepare_model_for_kbit_training(
-        model, 
-        use_gradient_checkpointing=args.gradient_checkpointing,
-        gradient_checkpointing_kwargs={"use_reentrant": True}
-    )
-    model = get_peft_model(model, lora_config)
-    model.print_trainable_parameters()
-
     return model, tokenizer
 
 
 def calculate_warmup_steps(epochs, dataset_size, batch_size, gradient_accumulation_steps, warmup_ratio):
-    """
-    Calculate the number of warmup steps
-
-    Args:
-    - epochs (int): The number of epochs
-    - dataset_size (int): The size of the dataset
-    - batch_size (int): The batch size
-    - gradient_accumulation_steps (int): The number of gradient accumulation steps
-    - warmup_ratio (float): The warmup ratio
-
-    Returns:
-    - warmup_steps (int): The number of warmup steps
-    """
     steps_per_epoch = (dataset_size / batch_size)
     total_steps = epochs * steps_per_epoch / gradient_accumulation_steps
     total_steps_per_device = total_steps / torch.cuda.device_count()
     warmup_steps = int(total_steps_per_device * warmup_ratio)
     warmup_steps = warmup_steps if warmup_steps > 1 else 0
     return warmup_steps
-
-
-def drop_long_texts(dataset, tokenizer, max_length=512):
-    """
-    Drop long texts from the dataset
-
-    Args:
-    - dataset (Dataset): The dataset
-    - tokenizer (AutoTokenizer): The tokenizer
-    - max_length (int): The maximum length of the text
-    - len_threshold (int): The length threshold
-
-    Returns:
-    - dataset_dropped (Dataset): The dataset with long texts dropped
-    """
-    df = pd.DataFrame(dataset)
-
-    rows_to_drop = []
-    tqdm_iterator = tqdm(df.iterrows(), total=len(df), desc="Dropping long texts")
-    for idx, row in tqdm_iterator:
-        src, tgt = LANG_TABLE[row['direction'].split('-')[0]], LANG_TABLE[row['direction'].split('-')[1]]
-        prompt = f"Translate this from {src} to {tgt}."
-        suffix_src = f"### {src}:"
-        suffix_tgt = f"### {tgt}:"
-        text = f"{prompt}\n{suffix_src}\n{row['src']}\n{suffix_tgt} {row['tgt']}"
-        outputs = tokenizer.encode_plus(
-            text,
-            padding=False,
-            truncation=True,
-            max_length=max_length,
-            return_tensors='pt',
-            return_attention_mask=False,
-            return_length=False
-        )
-        
-        input_len = len(outputs.input_ids.squeeze())
-        if input_len > max_length:
-            rows_to_drop.append(idx)
-    
-    df_dropped = df.drop(rows_to_drop)
-    dataset_dropped = Dataset.from_pandas(df_dropped)
-
-    print(f"Dropped (over {max_length}): {len(rows_to_drop)}")
-
-    return dataset_dropped
 
 
 def map_bidirectional(dataset, lang_col1='ko', lang_col2='en', exist_direction=False):
@@ -259,7 +190,7 @@ def map_bidirectional(dataset, lang_col1='ko', lang_col2='en', exist_direction=F
     return mapped_dataset
 
 
-def add_word_dataset(dataset, word_dataset, word_size=2880):
+def mix_word_dataset(dataset, word_dataset, word_size=2880):
     word_dataset = word_dataset.select(range(word_size))
     dataset_df, word_dataset_df = pd.DataFrame(dataset), pd.DataFrame(word_dataset)
     word_sources = []
@@ -289,12 +220,6 @@ def add_special_lang_tokens(tokenizer):
 
 
 def train(args):
-    """
-    Train the model
-
-    Args:
-    - args (Namespace): The arguments
-    """
     set_seed(args.seed)
 
     model, tokenizer = load_model_and_tokenizer(args)
@@ -304,8 +229,8 @@ def train(args):
         eval_dataset = load_dataset(args.eval_dataset_name, cache_dir=HF_DATASETS_CACHE_DIR)['validation']
         train_word_dataset = load_dataset(args.train_word_dataset_name, cache_dir=HF_DATASETS_CACHE_DIR)['train']
         eval_word_dataset = load_dataset(args.eval_word_dataset_name, cache_dir=HF_DATASETS_CACHE_DIR)['validation']
-        train_dataset = add_word_dataset(train_dataset, train_word_dataset, word_size=args.train_word_size)
-        eval_dataset = add_word_dataset(eval_dataset, eval_word_dataset, word_size=len(eval_word_dataset))
+        train_dataset = mix_word_dataset(train_dataset, train_word_dataset, word_size=args.train_word_size)
+        eval_dataset = mix_word_dataset(eval_dataset, eval_word_dataset, word_size=len(eval_word_dataset))
     else:
         train_dataset = load_dataset(args.train_dataset_name, cache_dir=HF_DATASETS_CACHE_DIR)['train']
         eval_dataset = load_dataset(args.eval_dataset_name, cache_dir=HF_DATASETS_CACHE_DIR)['validation']
