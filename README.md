@@ -53,8 +53,8 @@ accelerate launch --main_process_port=30001 --config_file ./training/llama/confi
   --eos_token_id 128001 \
   --pad_token_id 128002 \
   --metric_for_best_model sacrebleu_en2ko \
-  --train_dataset_name traintogpb/aihub-mmt-integrated-prime-base-300k \
-  --eval_dataset_name traintogpb/aihub-mmt-integrated-prime-base-300k \
+  --train_dataset_name YOUR_DATASET_PATH \
+  --eval_dataset_name YOUT_DATASET_PATH \
   --project_name test \
   --run_name test \
   --just_test
@@ -62,7 +62,6 @@ accelerate launch --main_process_port=30001 --config_file ./training/llama/confi
 
 - 그 외 argument는 `./training/llama/configs/llama_config.yaml` 파일에서 확인 가능
   - 위 YAML 파일을 수정하는 것으로도 학습 시 argument 변경 사항 적용 가능
-- 위 예시의 `train_dataset_name`과 `eval_dataset_name`은 HuggingFace의 private repo 상태임 (접근 필요 시 말씀해주세요)
 - `just_test`의 경우, 데이터셋의 극히 일부만 사용하여 간단히 테스트 하는 용도일 때만 사용합니다.
 
 #### Inference
