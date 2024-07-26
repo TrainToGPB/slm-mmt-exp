@@ -1,7 +1,7 @@
 model:
   model_name: gpt
-  lora_type: None
-  adapter_name: None
+  lora_name: None
+  lora_nickname: None
   model_type: api
   torch_dtype: bfloat16
   max_length: 1024

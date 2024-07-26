@@ -31,18 +31,18 @@ def load_translator(args):
     if args.model_type == 'api':
         model_path = args.model_name
     else:
-        if args.lora_type is None:
+        if args.lora_name is None:
             model_path = MODEL_MAPPING[args.model_name]
             lora_path = None
         else:
             model_path = PLM_MAPPING[args.model_name]
-            lora_path = ADAPTER_MAPPING[args.lora_type]
+            lora_path = ADAPTER_MAPPING[args.lora_name]
 
     if 'hf' in args.model_type:
         translator = HfTranslator(model_path, max_length=args.max_length)
         translator.model = translator.load_model(
             lora_path=lora_path,
-            adapter_name=args.adapter_name,
+            lora_nickname=args.lora_nickname,
             quantization='nf4' if args.model_type == 'hf-qlora' else None,
             torch_dtype=args.torch_dtype,
             cache_dir=HF_CACHE_DIR
@@ -50,7 +50,7 @@ def load_translator(args):
         translator.tokenizer = translator.load_tokenizer(padding_side='left')
     
     elif args.model_type == 'vllm':
-        translator = VllmTranslator(model_path, lora_path=lora_path, adapter_name=args.adapter_name)
+        translator = VllmTranslator(model_path, lora_path=lora_path, lora_nickname=args.lora_nickname)
         translator.model = translator.load_model(
             max_length=MAX_LENGTH,
             max_lora_rank=VLLM_MAX_LORA_RANK,
@@ -142,7 +142,6 @@ def model_translate(translator,
 
 
 def translate_text(translator, text, args):
-    
     texts = [text]
     translation, translation_time = model_translate(
         translator, 
@@ -206,15 +205,15 @@ def parse_infer_args(config_path):
     parser.add_argument('--model_name', 
                         type=str, 
                         default=model_config['model_name'], 
-                        help="Translation model name to use.")
-    parser.add_argument('--lora_type', 
+                        help="Translation model name (prefixed in translation_info.py) to use.")
+    parser.add_argument('--lora_name', 
                         type=lambda x: None if x.lower() == 'none' else x, 
-                        default=model_config['lora_type'], 
-                        help="LoRA adapter type to use.")
-    parser.add_argument('--adapter_name',
+                        default=model_config['lora_name'], 
+                        help="LoRA adapter's name (prefixed in translation_info.py) to use.")
+    parser.add_argument('--lora_nickname',
                         type=lambda x: None if x.lower() == 'none' else x,
-                        default=model_config['adapter_name'],
-                        help="Adapter name to use.")
+                        default=model_config['lora_nickname'],
+                        help="LoRA adapter's nickname to use.")
     parser.add_argument('--model_type', 
                         type=str, 
                         default=model_config['model_type'], 
@@ -270,11 +269,11 @@ def parse_infer_args(config_path):
                         default=infer_config['batch_size'], 
                         help="Batch size for translation.")
     parser.add_argument('--src_lang', 
-                        type=str, 
+                        type=lambda x: None if x.lower() == 'none' else x, 
                         default=infer_config['src_lang'], 
                         help="Source language.")
     parser.add_argument('--tgt_lang', 
-                        type=str, 
+                        type=lambda x: None if x.lower() == 'none' else x, 
                         default=infer_config['tgt_lang'], 
                         help="Target language.")
     parser.add_argument('--print_result', 
@@ -293,8 +292,8 @@ def parse_infer_args(config_path):
 def print_infer_info(args):
     print("\n############### TRANLSATION INFO ###############")
     print(f"MODEL: {args.model_name.upper()}")
-    if args.lora_type is not None:
-        print(f"ADAPTER: {args.lora_type.upper()}")
+    if args.lora_name is not None:
+        print(f"ADAPTER: {args.lora_name.upper()}")
     print(f"INFERENCE: {args.model_type.upper()}")
     if args.data_type == 'sentence':
         print(f"SENTENCE: {args.sentence_text}")

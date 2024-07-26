@@ -99,6 +99,7 @@ class ApiTranslator:
                 translation = self.model.translate(text, src_lang=src, tgt_lang=tgt, **kwargs)
             else:
                 raise ValueError(f"Invalid model type: {self.model_type}")
+
             translations.append(translation)
         
         return translations

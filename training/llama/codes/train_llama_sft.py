@@ -17,6 +17,7 @@ Notes:
 """
 # built-in
 import os
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 import sys
 os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 os.environ['TOKENIZERS_PARALLELISM'] = 'false'
@@ -41,13 +42,16 @@ from transformers import BitsAndBytesConfig
 from accelerate import Accelerator
 
 # custom
-sys.path.append('../../')
+sys.path.append(os.path.join(SCRIPT_DIR, '../../'))
 from training_utils import set_seed
 from argument import load_yaml_config, parse_arguments_llama
 from trainer import SFTTrainerWithEosToken
 from data_collator import Llama2DataCollatorForCompletionOnlyLM, Llama3DataCollatorForCompletionOnlyLM
-sys.path.append('../../../../') # Use your own path
-from custom_utils.general_secret import WANDB_CLIENT_KEY # Use your own path
+sys.path.append(os.path.join(SCRIPT_DIR, '../../../../'))
+try:
+    from custom_utils.general_secret import WANDB_CLIENT_KEY # Use your own path
+except:
+    WANDB_CLIENT_KEY = "YOUR_WANDB_CLIENT_KEY"
 
 
 LANG_TABLE = {
@@ -65,7 +69,7 @@ def load_model_and_tokenizer(args):
         quantization_config = BitsAndBytesConfig(
             load_in_4bit=args.use_4bit,
             bnb_4bit_quant_type=args.bnb_4bit_quant_type,
-            bnb_4bit_compute_dtype=args.bfb_4bit_compute_dtype,
+            bnb_4bit_compute_dtype=args.bnb_4bit_compute_dtype,
             bnb_4bit_use_double_quant=args.use_double_quant
         )
     else:
@@ -469,11 +473,11 @@ def train(args):
 
 if __name__ == '__main__':
     yaml_path = '../configs/llama_config.yaml'
-    args = parse_arguments_llama(yaml_path)
+    args = parse_arguments_llama(os.path.join(SCRIPT_DIR, yaml_path))
     acc_yaml_path = '../configs/deepspeed_train_config_bf16.yaml'
-    acc_config = load_yaml_config(acc_yaml_path)
+    acc_config = load_yaml_config(os.path.join(SCRIPT_DIR, acc_yaml_path))
 
-    args.per_device_batch_size = acc_config['deepspeed_config']['train_micro_batch_size_per_gpu']
+    # args.per_device_batch_size = acc_config['deepspeed_config']['train_micro_batch_size_per_gpu']
     args.gradient_accumulation_steps = acc_config['deepspeed_config']['gradient_accumulation_steps']
     args.max_grad_norm = acc_config['deepspeed_config']['gradient_clipping']
 

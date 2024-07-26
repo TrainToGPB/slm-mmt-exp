@@ -87,7 +87,7 @@ def parse_arguments_llama(yaml_path):
     # train config
     parser.add_argument('--plm_name', type=str, default=train_config['plm_name'], help="Pretrained language model name (from HuggingFace)")
     parser.add_argument('--use_fsdp', type=lambda x: (str(x).lower() == 'true'), default=train_config['use_fsdp'], help="Use Fully-Sharded Data Parallel")
-    parser.add_argument('--device_map', type=str, default=train_config['device_map'], help="Device where to model put on")
+    parser.add_argument('--torch_dtype', type=str, default=train_config['torch_dtype'], help="Torch compute dtype: float16, bfloat16, float32")
     parser.add_argument('--output_dir', type=str, default=train_config['output_dir'], help="Output directory")
     parser.add_argument('--dataloader_num_workers', type=int, default=train_config['dataloader_num_workers'], help="Number of dataloader workers")
     parser.add_argument('--per_device_batch_size', type=int, default=train_config['per_device_batch_size'], help="Per device train/eval batch size")
