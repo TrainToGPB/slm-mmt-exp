@@ -68,8 +68,8 @@ accelerate launch --main_process_port=30001 --config_file ./training/llama/confi
 - 공통 argument
 
   - `model_name`: `./inference/codes/translation_info.py`에 prefix된 간소화된 모델 이름
-  - `lora_name`: `./inference/codes/translation_info.py`에 prefix된 간소화된 LoRA 어댑터 이름
-  - `lora_nickname`: 모델에 LoRA 어댑터를 붙일 때 명명할 이름 (아무 이름이나 상관 없음)
+  - `lora_name`: `./inference/codes/translation_info.py`에 prefix된 간소화된 LoRA 어댑터 이름 (없는 경우 None)
+  - `lora_nickname`: 모델에 LoRA 어댑터를 붙일 때 명명할 이름 (아무 이름이나 상관 없음; 없는 경우 None)
   - `model_type`: `api`, `hf`, `hf-qlora`, `vllm` 중 모델과 호환되는 방식 선택
   - `prompt_type`: 번역 프롬프트가 필요한 경우, `llama`, `madlad` 중 선택
     - 프롬프트 필요 없이 문장을 그대로 입력하는 경우 `None` 입력
@@ -80,9 +80,9 @@ accelerate launch --main_process_port=30001 --config_file ./training/llama/confi
 - Sentence translation
   ```bash
   python ./inference/codes/translation_inference.py \
-    --model_name llama-3-ko \
-    --lora_name llama-3-ko-prime-base-mmt \
-    --lora_nickname mmt \
+    --model_name YOUR_MODEL_NAME \
+    --lora_name YOUR_LORA_NAME \
+    --lora_nickname YOUR_LORA_NICKNAME \
     --model_type vllm \
     --prompt_type llama \
     --data_type sentence \
@@ -98,8 +98,8 @@ accelerate launch --main_process_port=30001 --config_file ./training/llama/confi
   ```bash
   python translation_inference.py \
     --model_name YOUR_MODEL_TYPE \
-    --lora_name None \
-    --lora_nickname None \
+    --lora_name YOUR_LORA_NAME \
+    --lora_nickname YOUR_LORA_NICKNAME \
     --model_type vllm \
     --prompt_type llama \
     --data_type dataset \

@@ -130,9 +130,8 @@ def parse_arguments_llama(yaml_path):
     parser.add_argument('--train_word_dataset_name', type=str, default=data_config['train_word_dataset_name'], help="Train word dataset name (from HuggingFace)")
     parser.add_argument('--eval_word_dataset_name', type=str, default=data_config['eval_word_dataset_name'], help="Eval word dataset name (from HuggingFace)")
     parser.add_argument('--train_word_size', type=int, default=data_config['train_word_size'], help="Train word dataset size")
-    parser.add_argument('--instruction', type=str, default=data_config['instruction'], help="Training instruction for the model.")
-    parser.add_argument('--suffix_src', type=str, default=data_config['suffix_src'], help="Suffix for the prompt in source language")
-    parser.add_argument('--suffix_tgt', type=str, default=data_config['suffix_tgt'], help="Suffix for the prompt in target language")
+    parser.add_argument('--suffix_instruction', type=str, default=data_config['suffix_instruction'], help="Suffix for the instruction")
+    parser.add_argument('--suffix_response', type=str, default=data_config['suffix_response'], help="Suffix for the prompt in target language")
     parser.add_argument('--lang_col1', type=str, default=data_config['lang_col1'], help="Column name for Language 1")
     parser.add_argument('--lang_col2', type=str, default=data_config['lang_col2'], help="Column name for Language 2")
 

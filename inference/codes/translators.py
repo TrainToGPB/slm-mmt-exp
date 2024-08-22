@@ -67,7 +67,8 @@ class GptTranslator:
             messages=[
                 {"role": "system", "content": GPT_SYSTEM_PROMPT_STRIPPED},
                 {"role": "user", "content": user_prompt}
-            ]
+            ],
+            temperature=0.0
         )
         translation = response.choices[0].message.content
         return translation
@@ -117,7 +118,7 @@ class HfTranslator:
             quantization_config = BitsAndBytesConfig(
                 load_in_4bit=True,
                 bnb_4bit_quant_type='nf4',
-                bnb_4bit_compute_dtype=torch.bfloat16,
+                bnb_4bit_compute_dtype=torch_dtype,
                 bnb_4bit_use_double_quant=True
             )
         else:
@@ -144,8 +145,8 @@ class HfTranslator:
             except:
                 raise ValueError(f"Model {self.model_path} is not a CausalLM or Seq2SeqLM neither. Try again with a proper model.")
         
-        if quantization == None:
-            model.to(DEVICE)
+        if quantization is None:
+            model = model.to(DEVICE)
 
         if lora_path is not None:
             model = PeftModel.from_pretrained(
@@ -167,7 +168,7 @@ class HfTranslator:
                 tokenizer.eos_token_id = 46332
             elif any(model_suffix in self.model_path.lower() for model_suffix in ['llama-3', 'llama3']):
                 tokenizer.pad_token_id = 128002
-        elif 'mbart' in self.model_path:
+        elif 'mbart' in self.model_path.lower():
             tokenizer.src_lang = MBART_LANG_CODE[self.src_lang]
             tokenizer.tgt_lang = MBART_LANG_CODE[self.tgt_lang]
         try:
@@ -206,10 +207,10 @@ class HfTranslator:
     
 
 class VllmTranslator:
-    def __init__(self, model_path, lora_path=None, adapter_name=None):
+    def __init__(self, model_path, lora_path=None, lora_nickname=None):
         self.model_path = model_path
         self.lora_path = lora_path
-        self.adapter_name = adapter_name
+        self.lora_nickname = lora_nickname
         self.model = None
         self.sampling_params = None
 
@@ -260,18 +261,19 @@ class VllmTranslator:
         return sampling_params
 
     def translate(self, prompts):
-        lora_request = LoRARequest(self.adapter_name, 1, self.lora_path) if self.lora_path is not None else None
+        lora_request = LoRARequest(self.lora_nickname, 1, self.lora_path) if self.lora_path is not None else None
         outputs = self.model.generate(prompts, self.sampling_params, lora_request=lora_request, use_tqdm=False)
         translations = [output.outputs[0].text.strip() for output in outputs]
         return translations
         
 
-def make_prompt(text, src_lang, tgt_lang, prompt_type=None):
+def make_prompt(text, src_lang, tgt_lang, guidelines=None, prompt_type=None):
     if tgt_lang is None:
         raise ValueError("tgt_lang must be provided.")
     
     if prompt_type is None:
         prompt = text
+
     elif prompt_type == 'llama':
         if src_lang is None:
             raise ValueError("src_lang must be provided.")
@@ -279,6 +281,38 @@ def make_prompt(text, src_lang, tgt_lang, prompt_type=None):
         src_suffix = f"### {LLAMA_LANG_TABLE[src_lang]}:"
         tgt_suffix = f"### {LLAMA_LANG_TABLE[tgt_lang]}:"
         prompt = f"{instruction}\n{src_suffix} {text}\n{tgt_suffix}"
+
+    elif prompt_type == 'llama-instruct':
+        instruction_part = {
+            'head': "<instruction>",
+            'body': f"Translate the source sentence from {src_lang} to {tgt_lang}.\nBe sure to reflect the guidelines below when translating.",
+            'tail': "</instruction>"
+        }
+        instruction = f"{instruction_part['head']}\n{instruction_part['body']}\n{instruction_part['tail']}"
+        guideline_part = {
+            'head': "<guideline>",
+            'body': guidelines if guidelines is not None else ['Translate plainly.'],
+            'tail': "</guideline>"
+        }
+        guideline_body_part = '\n'.join([f'- {body}' for body in guideline_part['body']])
+        guideline = f"{guideline_part['head']}\n{guideline_body_part}\n{guideline_part['tail']}"
+        src_part = {
+            'head': f"<source><{LLAMA_LANG_TABLE[src_lang]}>",
+            'body': text.strip(),
+            'tail': f"</{LLAMA_LANG_TABLE[src_lang]}></source>"
+        }
+        src = f"{src_part['head']}\n{src_part['body']}\n{src_part['tail']}"
+        tgt_part = {
+            'head': f"<target><{LLAMA_LANG_TABLE[tgt_lang]}>",
+        }
+        tgt = f"{tgt_part['head']}\n"
+        translation_part = {
+            'head': "<translation>",
+            'body': f"{src}\n{tgt}",
+        }
+        translation = f"{translation_part['head']}\n{translation_part['body']}"
+        prompt = f"{instruction}\n\n{guideline}\n\n{translation}"
+
     elif prompt_type == 'madlad':
         src_suffix = f"<2{MADLAD_LANG_CODE[tgt_lang]}>"
         prompt = f"{src_suffix} {text}"

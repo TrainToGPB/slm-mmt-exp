@@ -39,9 +39,12 @@ def calculate_xcomet(eval_df, model, tgt_col, src_col='en', ref_col='ko'):
     for _, example in tqdm_iterator:
         src_text = example[src_col]
         tgt_text = example[tgt_col] if not pd.isna(example[tgt_col]) else ' '
-        ref_text = example[ref_col]
+        ref_text = example[ref_col] if ref_col is not None else None
 
-        triplet = {"src": src_text, "mt": tgt_text, "ref": ref_text}
+        if ref_text is not None:
+            triplet = {"src": src_text, "mt": tgt_text, "ref": ref_text}
+        else:
+            triplet = {"src": src_text, "mt": tgt_text}
         triplets.append(triplet)
 
     model_output = model.predict(triplets, batch_size=128, gpus=1)
@@ -71,16 +74,16 @@ def calculate_xcomet_line_by_line(eval_df, model, tgt_col, src_col='en', ref_col
 
 
 def calculate_token_len(df, tokenizer, col):
-    if col != 'src' and col != 'tgt' and not col.endswith('_trans'):
-        raise ValueError("Column name should be either 'src' or 'tgt', or ends with '_trans'")
+    if col != 'src' and col != 'tgt' and not col.endswith('trans'):
+        raise ValueError("Column name should be either 'src' or 'tgt', or ends with 'trans'")
     token_lens = [len(tokenizer.tokenize(text)) for text in df[col]]
-    len_col = col.replace('_trans', '_len') if '_trans' in col else col + '_len'
+    len_col = col.replace('trans', 'len') if 'trans' in col else col + 'len'
     df.insert(df.columns.get_loc(col) + 1, len_col, token_lens)
     print(f"Token length of column '{col}' calculated.")
     return df
 
 
-def calculate_speed(eval_df, tgt_col, len_col='src_token_len'):
+def calculate_speed(eval_df, tgt_col, len_col='src_len'):
     tqdm_iterator = tqdm(eval_df.iterrows(), total=len(eval_df), desc="Calculating speed")
     token_per_sec = []
     for _, example in tqdm_iterator:
@@ -119,8 +122,8 @@ def calculate_sacrebleu_line_by_line(eval_df, column_name, ref_col='ko'):
     return sacrebleu_scores
 
 
-def make_eval_dict(results, direction_cols, data_source_cols, save_yaml_path, metric_type='xcomet', print_dict=False):
-    if metric_type == 'xcomet':
+def make_eval_dict(results, direction_cols, data_source_cols, save_yaml_path, metric_type='xcomet-no-ref', print_dict=False):
+    if 'xcomet' in metric_type:
         xcomet_model = load_xcomet_model()
 
     eval_dict = read_eval_dict_yaml(save_yaml_path)
@@ -139,12 +142,20 @@ def make_eval_dict(results, direction_cols, data_source_cols, save_yaml_path, me
                 target_data = results[(results['data_source'].str.startswith(data_source)) & (results['direction'] == direction)]
                 
                 print(f"Calculating {metric_type.upper()} of {direction.upper()}-{data_source.upper()}: {column}...")
-                if metric_type == 'xcomet':
-                    score_dict[column] = calculate_xcomet(target_data, xcomet_model, column, 'src', 'tgt')
+                if 'xcomet' in metric_type:
+                    if metric_type == 'xcomet-no-ref':
+                        ref_col = None
+                    elif metric_type == 'xcomet-with-ref':
+                        ref_col = 'tgt'
+                    else:
+                        raise ValueError(f"Invalid metric type: {metric_type}")
+                    score_dict[column] = calculate_xcomet(target_data, xcomet_model, column, 'src', ref_col)
                 elif metric_type == 'speed':
                     score_dict[column] = calculate_speed(target_data, column, column.replace('time', 'len'))
                 elif metric_type == 'bleu':
                     score_dict[column] = calculate_sacrebleu(target_data, column, 'tgt')
+                else:
+                    raise ValueError(f"Invalid metric type: {metric_type}")
 
             if print_dict:
                 print(score_dict)
@@ -160,13 +171,13 @@ def make_eval_dict(results, direction_cols, data_source_cols, save_yaml_path, me
     return eval_dict
 
 
-def save_line_by_line_metrics(eval_df, save_path, metric_type='xcomet', src_col='src', ref_col='tgt'):
-    if metric_type == 'xcomet':
+def save_line_by_line_metrics(eval_df, save_path, metric_type='xcomet-with-ref', src_col='src', ref_col='tgt'):
+    if 'xcomet' in metric_type:
         xcomet_model = load_xcomet_model()
 
     for tgt_col in eval_df.columns:
-        if 'train' in save_path:
-            if tgt_col != 'ko':
+        if tgt_col == 'src' or tgt_col == 'tgt':
+            if metric_type != 'xcomet-no-ref':
                 continue
         else:
             if 'trans' not in tgt_col:
@@ -174,18 +185,15 @@ def save_line_by_line_metrics(eval_df, save_path, metric_type='xcomet', src_col=
         
         print(f"Calculating {metric_type.upper()} of {tgt_col}...")
 
-        if metric_type == 'xcomet':
-            if 'train' in save_path:
-                eval_col = tgt_col + '_xcomet'
+        if 'xcomet' in metric_type:
+            if not tgt_col.endswith('trans'):
+                eval_col = tgt_col + f'_{metric_type}'
             else:
-                eval_col = tgt_col.replace('trans', 'xcomet')
+                eval_col = tgt_col.replace('trans', metric_type)
             if eval_col in eval_df.columns:
                 continue
-            if 'train' not in save_path:
-                xcomet_scores = calculate_xcomet_line_by_line(eval_df, xcomet_model, tgt_col, src_col, ref_col)
-            else:
-                xcomet_scores = calculate_xcomet_line_by_line(eval_df, xcomet_model, 'ko', src_col, None)
-            # eval_df.insert(eval_df.columns.get_loc(tgt_col) + 1, eval_col, xcomet_scores)
+            xcomet_scores = calculate_xcomet_line_by_line(eval_df, xcomet_model, tgt_col, src_col, ref_col)
+            eval_df.insert(eval_df.columns.get_loc(tgt_col) + 1, eval_col, xcomet_scores)
             eval_df[eval_col] = xcomet_scores
 
         elif metric_type == 'bleu':
@@ -202,9 +210,9 @@ def main():
     import argparse
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--results_type', type=str, default='api', help='api, llama2, llama3')
-    parser.add_argument('--eval_type', type=str, default='eval_dict', help='eval_dict, line_by_line, all')
-    parser.add_argument('--metric_type', type=str, default='bleu', help='xcomet, bleu, speed')
+    parser.add_argument('--results_type', type=str, default='api', help='api, llama2, llama3, etc.')
+    parser.add_argument('--eval_type', type=str, default='eval-dict', help='eval-dict, line-by-line, all')
+    parser.add_argument('--metric_type', type=str, default='bleu', help='xcomet-with-ref, xcomet-no-ref, bleu, speed')
     args = parser.parse_args()
 
     results_path_dict = {
@@ -217,47 +225,51 @@ def main():
         'zh': '../results/mmt/zh_test_bidir_inferenced.csv',
         'mmt': '../results/mmt/mmt_test_bidir_inferenced.csv', 
         'mmt-m2m': '../results/mmt/mmt_m2m_test_bidir_inferenced.csv',
+        'mmt-clean': '../results/mmt/mmt_test_bidir_inferenced_clean.csv',
+        'mmt-train-prime': '../results/prime-cleansing/sft/prime_train.csv',
+        'mmt-train-base': '../results/prime-cleansing/sft/base_train.csv',
     }
     results_path = results_path_dict[args.results_type]
     results = pd.read_csv(results_path)
     results.fillna(' ', inplace=True)
 
-    model_name = 'meta-llama/Meta-Llama-3-8B'
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    if args.metric_type == 'speed':
+        for col in results.columns:
+            if col.endswith('trans') or col == 'src' or col == 'tgt':
+                if (col != 'src' and col != 'tgt') and (col.replace('trans', 'len') in results.columns):
+                    continue
+                if (col == 'src' or col == 'tgt') and (col + '_len' in results.columns):
+                    continue
+                if 'gemma' in col:
+                    tokenizer_name = 'google/gemma-7b'
+                else:
+                    tokenizer_name = 'meta-llama/Meta-Llama-3-8B'
+                tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
+                results = calculate_token_len(results, tokenizer, col)
+        
+        results = rearrange_columns(results, front_cols=['tgt', 'tgt_len'], back_cols=['src', 'src_len', 'direction', 'data_source'])
+        results.to_csv(results_path, index=False)
 
-    for col in results.columns:
-        if col.endswith('_trans') or col == 'src' or col == 'tgt':
-            if (col != 'src' and col != 'tgt') and (col.replace('_trans', '_len') in results.columns):
-                continue
-            if (col == 'src' or col == 'tgt') and (col + '_len' in results.columns):
-                continue
-            if 'gemma' in col:
-                tokenizer = AutoTokenizer.from_pretrained('google/gemma-7b')
-            results = calculate_token_len(results, tokenizer, col)
-    
-    results = rearrange_columns(results, front_cols=['tgt', 'tgt_len'], back_cols=['src', 'src_len', 'direction', 'data_source'])
-    results.to_csv(results_path, index=False)
-
-    if args.eval_type == 'eval_dict':
-        direction_cols = results['direction'].unique()
-        data_source_cols = [
-            # 'aihub', 
-            'flores'
-        ]
-
+    direction_cols = results['direction'].unique()
+    data_source_cols = [
+        'aihub', 
+        'flores'
+    ]
+    if args.eval_type == 'eval-dict':
         save_path = results_path.replace('inferenced', f'{args.metric_type}').replace('.csv', '.yaml')
         make_eval_dict(results, direction_cols, data_source_cols, save_path, metric_type=args.metric_type, print_dict=True)
 
-    elif args.eval_type == 'line_by_line':
-        save_line_by_line_metrics(results, save_path=results_path, metric_type=args.metric_type, src_col=args.results_type[:2], ref_col=None)
+    elif args.eval_type == 'line-by-line':
+        # if args.metric_type == 'bleu' or args.metric_type == 'xcomet-with-ref':
+        #     ref_col = 'tgt'
+        # else:
+        #     ref_col = None
+        # save_line_by_line_metrics(results, save_path=results_path, metric_type=args.metric_type, src_col='src', ref_col=ref_col)
+        save_line_by_line_metrics(results, save_path=results_path, metric_type=args.metric_type, src_col='tgt', ref_col='src')
 
     elif args.eval_type == 'all':
-        direction_cols = ['en-ko', 'ko-en']
-        data_source_cols = ['aihub', 'flores']
-
         save_path = results_path.replace('inferenced', f'{args.metric_type}').replace('.csv', '.yaml')
         make_eval_dict(results, direction_cols, data_source_cols, save_path, metric_type=args.metric_type, print_dict=True)
-
         save_line_by_line_metrics(results, save_path=results_path, metric_type=args.metric_type)
 
 

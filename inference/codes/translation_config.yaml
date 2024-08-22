@@ -1,26 +1,28 @@
 model:
-  model_name: gpt
-  lora_name: None
-  lora_nickname: None
-  model_type: api
+  model_name: llama-3-ko
+  lora_name: llama-3-ko-prime-base-mmt-v1-sft-it-xml
+  lora_nickname: mmt-v1
+  model_type: vllm
   torch_dtype: bfloat16
-  max_length: 1024
+  max_length: 8192
   seed: 42
 
 data:
-  prompt_type: llama
+  prompt_type: llama-instruct
+  guidelines:
+    - "Translate plainly."
   data_type: dataset
   sentence:
-    text: "안녕하세요. 티맥스 코어에이아이 연구 2본부 1-3팀입니다."
+    text: "사번 입력 |sep| 이름 입력 |sep| 부서 입력 |sep| 직책 입력 |sep| 직위 입력 |sep| 직급 입력 |sep| 직계 입력 |sep| 직무 입력 |sep| 검색"
   dataset:
-    dataset_name: mmt-words-ko
-    tgt_col: word
+    dataset_name: mmt
+    tgt_col: src
     lang_col: direction
-    trans_col: gpt_trans
-    time_col: gpt_time
+    trans_col: v1_it_xml-trans
+    time_col: v1_it_xml-time
 
 infer:
   batch_size: 128
-  src_lang: ko
-  tgt_lang: en
+  src_lang: None
+  tgt_lang: None
   print_result: True

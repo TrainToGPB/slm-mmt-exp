@@ -1,26 +1,11 @@
-"""
-Train the model with the specified configuration
-
-The following functions are available:
-- load_model_and_tokenizer: Load the model and tokenizer with the specified configuration
-- calculate_warmup_steps: Calculate the number of warmup steps
-- postprocess_text: Postprocess the text
-- drop_long_texts: Drop long texts from the dataset
-- train: Train the model
-
-Example:
-    $ Single GPU: python train_llama_sft.py 
-    $ Multi GPU (DDP): accelerate launch --main_process_port 50001 --config_file ../configs/deepspeed_train_config_bf16.yaml train_llama_sft.py
-
-Notes:
-- The training arguments are in the llama_config.yaml file
-"""
 # built-in
 import os
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-import sys
 os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 os.environ['TOKENIZERS_PARALLELISM'] = 'false'
+import re
+import sys
+import warnings
 from collections import defaultdict
 
 # third-party
@@ -37,9 +22,11 @@ from transformers import AutoTokenizer, AutoModelForCausalLM
 from peft import LoraConfig
 from peft import get_peft_model, prepare_model_for_kbit_training
 from trl import SFTTrainer
+from accelerate import Accelerator
 from transformers import TrainingArguments
 from transformers import BitsAndBytesConfig
-from accelerate import Accelerator
+# from transformers import logging # 'gamma', 'beta' 관련 로그 출력 방지 (progress bar 출력 안됨 주의)
+# logging.set_verbosity_error()
 
 # custom
 sys.path.append(os.path.join(SCRIPT_DIR, '../../'))
@@ -194,23 +181,18 @@ def map_bidirectional(dataset, lang_col1='ko', lang_col2='en', exist_direction=F
     return mapped_dataset
 
 
-def mix_word_dataset(dataset, word_dataset, word_size=2880):
-    word_dataset = word_dataset.select(range(word_size))
-    dataset_df, word_dataset_df = pd.DataFrame(dataset), pd.DataFrame(word_dataset)
-    word_sources = []
-    for row in word_dataset:
-        if row['src_lang'] == 'ko':
-            word_sources.append('words-ko')
-        elif row['src_lang'] == 'en':
-            word_sources.append('words-en')
+def mix_word_dataset(dataset, word_dataset, word_size=10000):
+    sent_df = pd.DataFrame(dataset)
+    word_df = pd.DataFrame(word_dataset)
+    try:
+        word_df = word_df.sample(word_size).reset_index(drop=True)
+    except:
+        warnings.warn("Word dataset size is smaller than the specified size. Using the original size.")
 
-    word_dataset_df['src_lang'] = word_sources
-    word_dataset_df['ko_ref_xcomet'] = np.nan
-    word_dataset_df.rename(columns={'src_lang': 'source', 'ko': 'ko_ref', 'en': 'en_ref'}, inplace=True)
-    word_dataset_df = word_dataset_df[['ko_ref_xcomet', 'ko_ref', 'en_ref', 'source']]
+    total_df = pd.concat([sent_df, word_df], axis=0)
+    total_df = total_df.sample(frac=1).reset_index(drop=True)
 
-    dataset_df = pd.concat([dataset_df, word_dataset_df], axis=0)
-    dataset = Dataset.from_pandas(dataset_df)
+    dataset = Dataset.from_pandas(total_df)
     
     return dataset
 
@@ -232,9 +214,9 @@ def train(args):
         train_dataset = load_dataset(args.train_dataset_name, cache_dir=HF_DATASETS_CACHE_DIR)['train']
         eval_dataset = load_dataset(args.eval_dataset_name, cache_dir=HF_DATASETS_CACHE_DIR)['validation']
         train_word_dataset = load_dataset(args.train_word_dataset_name, cache_dir=HF_DATASETS_CACHE_DIR)['train']
-        eval_word_dataset = load_dataset(args.eval_word_dataset_name, cache_dir=HF_DATASETS_CACHE_DIR)['validation']
+        # eval_word_dataset = load_dataset(args.eval_word_dataset_name, cache_dir=HF_DATASETS_CACHE_DIR)['validation']
         train_dataset = mix_word_dataset(train_dataset, train_word_dataset, word_size=args.train_word_size)
-        eval_dataset = mix_word_dataset(eval_dataset, eval_word_dataset, word_size=len(eval_word_dataset))
+        # eval_dataset = mix_word_dataset(eval_dataset, eval_word_dataset, word_size=len(eval_word_dataset))
     else:
         train_dataset = load_dataset(args.train_dataset_name, cache_dir=HF_DATASETS_CACHE_DIR)['train']
         eval_dataset = load_dataset(args.eval_dataset_name, cache_dir=HF_DATASETS_CACHE_DIR)['validation']
@@ -267,7 +249,9 @@ def train(args):
         output_dir = args.output_dir
         logging_steps = min(25, warmup_steps // 10) if warmup_steps >= 10 else args.logging_steps
         eval_steps = warmup_steps if warmup_steps > 0 else args.eval_steps
+        # eval_steps = args.eval_steps
         save_steps = warmup_steps if warmup_steps > 0 else args.save_steps
+        # save_steps = args.save_steps
 
     args.project_name = project_name
     args.output_dir = output_dir
@@ -317,12 +301,50 @@ def train(args):
 
 
     def formatting_func(example):
-        output_texts = []
+        prompts = []
         for src_text, tgt_text, direction in zip(example['src'], example['tgt'], example['direction']):
-            src, tgt = direction.split('-')[0], direction.split('-')[1]
-            text = f"Translate this from {LANG_TABLE[src]} to {LANG_TABLE[tgt]}.\n### {LANG_TABLE[src]}: {src_text.strip()}\n### {LANG_TABLE[tgt]}: {tgt_text.strip()}"
-            output_texts.append(text)
-        return output_texts
+            src_langcode, tgt_langcode = direction.split('-')[0], direction.split('-')[1]
+            src_lang, tgt_lang = LANG_TABLE[src_langcode], LANG_TABLE[tgt_langcode]
+            
+            instruction_part = {
+                'head': "<instruction>",
+                'body': f"Translate the source sentence from {src_lang} to {tgt_lang}.\nBe sure to reflect the guidelines below when translating.",
+                'tail': "</instruction>"
+            }
+            instruction = f"{instruction_part['head']}\n{instruction_part['body']}\n{instruction_part['tail']}"
+            guideline_part = {
+                'head': "<guideline>",
+                'body': [
+                    "Translate plainly."
+                ],
+                'tail': "</guideline>"
+            }
+            guideline_body_part = '\n'.join([f'- {body}' for body in guideline_part['body']])
+            guideline = f"{guideline_part['head']}\n{guideline_body_part}\n{guideline_part['tail']}"
+            src_part = {
+                'head': f"<source><{src_lang}>",
+                'body': src_text.strip(),
+                'tail': f"</{src_lang}></source>"
+            }
+            src = f"{src_part['head']}\n{src_part['body']}\n{src_part['tail']}"
+            tgt_part = {
+                'head': f"<target><{tgt_lang}>",
+                'body': tgt_text.strip(),
+                'tail': f"</{tgt_lang}></target>"
+            }
+            tgt = f"{tgt_part['head']}\n{tgt_part['body']}\n{tgt_part['tail']}"
+            translation_part = {
+                'head': "<translation>",
+                'body': f"{src}\n{tgt}",
+                'tail': "</translation>"
+            }
+            translation = f"{translation_part['head']}\n{translation_part['body']}\n{translation_part['tail']}"
+            
+            prompt = f"{instruction}\n\n{guideline}\n\n{translation}"
+
+            prompts.append(prompt)
+
+        return prompts
 
     def preprocess_logits_for_metrics(logits, labels):
         pred_ids = torch.argmax(logits, dim=-1)
@@ -366,6 +388,29 @@ def train(args):
                 batch_size=4
             )[2].mean().item() * 100
         
+        def get_lang_signs(inputs):
+            signs = []
+            for input_id in inputs:
+                src_lang, tgt_lang = None, None
+                for lang_code, lang_full in LANG_TABLE.items():
+                    lang_suffix_src = f'<source><{lang_full}>\n'
+                    lang_encoding_src = np.array(tokenizer.encode(lang_suffix_src, add_special_tokens=False))
+                    lang_idx_src = find_start_idx_window(input_id, lang_encoding_src)
+                    if lang_idx_src != -1:
+                        src_lang = lang_code
+                        continue
+                    lang_suffix_tgt = f'<target><{lang_full}>\n'
+                    lang_encoding_tgt = np.array(tokenizer.encode(lang_suffix_tgt, add_special_tokens=False))
+                    lang_idx_tgt = find_start_idx_window(input_id, lang_encoding_tgt)
+                    if lang_idx_tgt != -1:
+                        tgt_lang = lang_code
+                        continue
+                    if src_lang is not None and tgt_lang is not None:
+                        break
+                sign = f"{src_lang}2{tgt_lang}"
+                signs.append(sign)
+            return signs
+        
         IGNORE_INDEX = -100
         preds, labels, inputs = p.predictions[0], p.label_ids, p.inputs
 
@@ -386,23 +431,7 @@ def train(args):
         decoded_preds = tokenizer.batch_decode(preds, skip_special_tokens=True)
         decoded_preds = [pred.strip() for pred in decoded_preds]
 
-        signs = []
-        for input_id in inputs:
-            lang_start_idxs = {}
-            for lang in LANG_TABLE.keys():
-                lang_word = f'{LANG_TABLE[lang]}'
-                if any([plm_name in args.plm_name.lower() for plm_name in ['llama-3', 'llama3', 'gemma']]):
-                    lang_word = ' ' + lang_word 
-                lang_encoding = np.array(tokenizer.encode(lang_word, add_special_tokens=False))
-                lang_idx = find_start_idx_window(input_id, lang_encoding)
-                if lang_idx == -1:
-                    continue
-                lang_start_idxs[lang] = lang_idx
-                if len(lang_start_idxs.keys()) == 2:
-                    lang1, lang2 = list(lang_start_idxs.keys())
-                    sign = f"{lang1}2{lang2}" if lang_start_idxs[lang1] < lang_start_idxs[lang2] else f"{lang2}2{lang1}"
-                    signs.append(sign)
-                    break
+        signs = get_lang_signs(inputs)
 
         decodings = defaultdict(list)
         for sign, pred, label in zip(signs, decoded_preds, decoded_labels):
@@ -415,17 +444,15 @@ def train(args):
         random_decoded_preds = np.array(decoded_preds)[random_indices]
 
         for decoded_label, decoded_pred in zip(random_decoded_labels, random_decoded_preds):
-            print("[LABEL]")
-            print(decoded_label)
-            print("[PREDICTION]")
-            print(decoded_pred)
-            print()
+            print(f"[LABEL]\n{decoded_label}")
+            print(f"[PREDICTION]\n{decoded_pred}\n")
 
+        decodings_for_metrics = {key: [re.sub(r'</\w+>', '', text).strip() for text in texts] for key, texts in decodings.items()}
         sacrebleu_scores = {
-            metrics_result_key('sacrebleu', key): compute_sacrebleu(decodings, key) for key in decodings.keys() if 'pred' in key
+            metrics_result_key('sacrebleu', key): compute_sacrebleu(decodings_for_metrics, key) for key in decodings_for_metrics.keys() if 'pred' in key
         }
         bertscore_scores = {
-            metrics_result_key('bertscore', key): compute_bertscore(decodings, key) for key in decodings.keys() if 'pred' in key
+            metrics_result_key('bertscore', key): compute_bertscore(decodings_for_metrics, key) for key in decodings_for_metrics.keys() if 'pred' in key
         }
         result = {
             **sacrebleu_scores,
@@ -447,8 +474,8 @@ def train(args):
         raise ValueError("Unknown PLM name")
 
     data_collator = data_collator_cls(
-        instruction_template=f"{args.instruction}\n{args.suffix_src}",
-        response_template=f"\n{args.suffix_tgt}",
+        instruction_template=args.suffix_instruction,
+        response_template=args.suffix_response,
         tokenizer=tokenizer, 
         lang_table=LANG_TABLE,
         mlm=False
@@ -477,7 +504,7 @@ if __name__ == '__main__':
     acc_yaml_path = '../configs/deepspeed_train_config_bf16.yaml'
     acc_config = load_yaml_config(os.path.join(SCRIPT_DIR, acc_yaml_path))
 
-    # args.per_device_batch_size = acc_config['deepspeed_config']['train_micro_batch_size_per_gpu']
+    args.per_device_batch_size = acc_config['deepspeed_config']['train_micro_batch_size_per_gpu']
     args.gradient_accumulation_steps = acc_config['deepspeed_config']['gradient_accumulation_steps']
     args.max_grad_norm = acc_config['deepspeed_config']['gradient_clipping']
 

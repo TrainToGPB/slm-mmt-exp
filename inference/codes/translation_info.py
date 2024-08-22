@@ -13,6 +13,12 @@ VLLM_VRAM_LIMIT = 0.95
 VLLM_MAX_LORA_RANK = 64
 
 GPT_SYSTEM_PROMPT = """
+You are a translator for English, 한국어, 日本語, and 中文.
+Translate the following sentences into the target language.
+Say only the translated sentence, not any other information.
+"""
+
+GPT_SYSTEM_PROMPT_WORD = """
 You are a word translator for English, 한국어, 日本語, and 中文.
 Translate the following words into the target language.
 Say only the translated word, not any other information.
@@ -41,31 +47,31 @@ MODEL_MAPPING = {
     'llama-3-ko-prime-base-en-word': os.path.join(MODEL_BASE_DIR, 'word/llama3-word-mix-all-bidir-merged-bf16'),
 
     # KO-JA
-    'llama-3-prime-base-ja': os.path.join(MODEL_BASE_DIR, 'mmt_ft/ko-ja/baseline-merged'),
-    'llama-3-ko-prime-base-ja': os.path.join(MODEL_BASE_DIR, 'mmt_ft/ko-ja/ko-merged'),
-    'llama-3-ja-prime-base-ja': os.path.join(MODEL_BASE_DIR, 'mmt_ft/ko-ja/ja-merged'),
-    'llama-3-koja-halfja-prime-base-ja': os.path.join(MODEL_BASE_DIR, 'mmt_ft/ko-ja/koja-halfja-merged'),
-    'llama-3-koja-sigmoid-prime-base-ja': os.path.join(MODEL_BASE_DIR, 'mmt_ft/ko-ja/koja-sigmoid-merged'),
-    'llama-3-koja-linear-prime-base-ja': os.path.join(MODEL_BASE_DIR, 'mmt_ft/ko-ja/koja-linear-merged'),
+    'llama-3-prime-base-ja': os.path.join(MODEL_BASE_DIR, 'mmt-ft/ko-ja/baseline-merged'),
+    'llama-3-ko-prime-base-ja': os.path.join(MODEL_BASE_DIR, 'mmt-ft/ko-ja/ko-merged'),
+    'llama-3-ja-prime-base-ja': os.path.join(MODEL_BASE_DIR, 'mmt-ft/ko-ja/ja-merged'),
+    'llama-3-koja-halfja-prime-base-ja': os.path.join(MODEL_BASE_DIR, 'mmt-ft/ko-ja/koja-halfja-merged'),
+    'llama-3-koja-sigmoid-prime-base-ja': os.path.join(MODEL_BASE_DIR, 'mmt-ft/ko-ja/koja-sigmoid-merged'),
+    'llama-3-koja-linear-prime-base-ja': os.path.join(MODEL_BASE_DIR, 'mmt-ft/ko-ja/koja-linear-merged'),
 
     # KO-ZH
-    'llama-3-prime-base-zh': os.path.join(MODEL_BASE_DIR, 'mmt_ft/ko-zh/baseline-merged'),
-    'llama-3-ko-prime-base-zh': os.path.join(MODEL_BASE_DIR, 'mmt_ft/ko-zh/ko-merged'),
-    'llama-3-zh-prime-base-zh': os.path.join(MODEL_BASE_DIR, 'mmt_ft/ko-zh/zh-merged'),
-    'llama-3-kozh-halfzh-prime-base-zh': os.path.join(MODEL_BASE_DIR, 'mmt_ft/ko-zh/kozh-halfzh-merged'),
-    'llama-3-kozh-sigmoid-prime-base-zh': os.path.join(MODEL_BASE_DIR, 'mmt_ft/ko-zh/kozh-sigmoid-merged'),
-    'llama-3-kozh-linear-prime-base-zh': os.path.join(MODEL_BASE_DIR, 'mmt_ft/ko-zh/kozh-linear-merged'),
+    'llama-3-prime-base-zh': os.path.join(MODEL_BASE_DIR, 'mmt-ft/ko-zh/baseline-merged'),
+    'llama-3-ko-prime-base-zh': os.path.join(MODEL_BASE_DIR, 'mmt-ft/ko-zh/ko-merged'),
+    'llama-3-zh-prime-base-zh': os.path.join(MODEL_BASE_DIR, 'mmt-ft/ko-zh/zh-merged'),
+    'llama-3-kozh-halfzh-prime-base-zh': os.path.join(MODEL_BASE_DIR, 'mmt-ft/ko-zh/kozh-halfzh-merged'),
+    'llama-3-kozh-sigmoid-prime-base-zh': os.path.join(MODEL_BASE_DIR, 'mmt-ft/ko-zh/kozh-sigmoid-merged'),
+    'llama-3-kozh-linear-prime-base-zh': os.path.join(MODEL_BASE_DIR, 'mmt-ft/ko-zh/kozh-linear-merged'),
 
     # MMT
-    'llama-3-prime-base-mmt': os.path.join(MODEL_BASE_DIR, 'mmt_ft/ko-enjazh/baseline-merged'),
-    'llama-3-ko-prime-base-mmt': os.path.join(MODEL_BASE_DIR, 'mmt_ft/ko-enjazh/ko-merged'),
-    'llama-3-ja-prime-base-mmt': os.path.join(MODEL_BASE_DIR, 'mmt_ft/ko-enjazh/ja-merged'),
-    'llama-3-zh-prime-base-mmt': os.path.join(MODEL_BASE_DIR, 'mmt_ft/ko-enjazh/zh-merged'),
-    'llama-3-kojazh-prime-base-mmt': os.path.join(MODEL_BASE_DIR, 'mmt_ft/ko-enjazh/kojazh-merged'),
-    'llama-3-kojazh-halfall-prime-base-mmt': os.path.join(MODEL_BASE_DIR, 'mmt_ft/ko-enjazh/kojazh-halfall-merged'),
-    'llama-3-kojazh-equal-prime-base-mmt': os.path.join(MODEL_BASE_DIR, 'mmt_ft/ko-enjazh/kojazh-equal-merged'),
-    'llama-3-kojazh-halfjazh-prime-base-mmt': os.path.join(MODEL_BASE_DIR, 'mmt_ft/ko-enjazh/kojazh-halfjazh-merged'),
-    'llama-3-kojazh-quarterjazh-prime-base-mmt': os.path.join(MODEL_BASE_DIR, 'mmt_ft/ko-enjazh/kojazh-quarterjazh-merged'),
+    'llama-3-prime-base-mmt': os.path.join(MODEL_BASE_DIR, 'mmt-ft/ko-enjazh/baseline-merged'),
+    'llama-3-ko-prime-base-mmt': os.path.join(MODEL_BASE_DIR, 'mmt-ft/ko-enjazh/ko-merged'),
+    'llama-3-ja-prime-base-mmt': os.path.join(MODEL_BASE_DIR, 'mmt-ft/ko-enjazh/ja-merged'),
+    'llama-3-zh-prime-base-mmt': os.path.join(MODEL_BASE_DIR, 'mmt-ft/ko-enjazh/zh-merged'),
+    'llama-3-kojazh-prime-base-mmt': os.path.join(MODEL_BASE_DIR, 'mmt-ft/ko-enjazh/kojazh-merged'),
+    'llama-3-kojazh-halfall-prime-base-mmt': os.path.join(MODEL_BASE_DIR, 'mmt-ft/ko-enjazh/kojazh-halfall-merged'),
+    'llama-3-kojazh-equal-prime-base-mmt': os.path.join(MODEL_BASE_DIR, 'mmt-ft/ko-enjazh/kojazh-equal-merged'),
+    'llama-3-kojazh-halfjazh-prime-base-mmt': os.path.join(MODEL_BASE_DIR, 'mmt-ft/ko-enjazh/kojazh-halfjazh-merged'),
+    'llama-3-kojazh-quarterjazh-prime-base-mmt': os.path.join(MODEL_BASE_DIR, 'mmt-ft/ko-enjazh/kojazh-quarterjazh-merged'),
 }
 
 PLM_MAPPING = {
@@ -106,31 +112,33 @@ ADAPTER_MAPPING = {
     'llama-3-ko-prime-base-en-word': os.path.join(MODEL_BASE_DIR, 'word/llama3-word-mix-all-bidir'),
 
     # KO-JA
-    # 'llama-3-prime-base-ja': os.path.join(MODEL_BASE_DIR, 'mmt_ft/ko-ja/baseline'),
-    # 'llama-3-ko-prime-base-ja': os.path.join(MODEL_BASE_DIR, 'mmt_ft/ko-ja/ko'),
-    'llama-3-ja-prime-base-ja': os.path.join(MODEL_BASE_DIR, 'mmt_ft/ko-ja/ja'),
-    'llama-3-koja-halfja-prime-base-ja': os.path.join(MODEL_BASE_DIR, 'mmt_ft/ko-ja/koja-halfja'),
-    'llama-3-koja-sigmoid-prime-base-ja': os.path.join(MODEL_BASE_DIR, 'mmt_ft/ko-ja/koja-sigmoid'),
-    'llama-3-koja-linear-prime-base-ja': os.path.join(MODEL_BASE_DIR, 'mmt_ft/ko-ja/koja-linear'),
+    # 'llama-3-prime-base-ja': os.path.join(MODEL_BASE_DIR, 'mmt-ft/ko-ja/baseline'),
+    # 'llama-3-ko-prime-base-ja': os.path.join(MODEL_BASE_DIR, 'mmt-ft/ko-ja/ko'),
+    'llama-3-ja-prime-base-ja': os.path.join(MODEL_BASE_DIR, 'mmt-ft/ko-ja/ja'),
+    'llama-3-koja-halfja-prime-base-ja': os.path.join(MODEL_BASE_DIR, 'mmt-ft/ko-ja/koja-halfja'),
+    'llama-3-koja-sigmoid-prime-base-ja': os.path.join(MODEL_BASE_DIR, 'mmt-ft/ko-ja/koja-sigmoid'),
+    'llama-3-koja-linear-prime-base-ja': os.path.join(MODEL_BASE_DIR, 'mmt-ft/ko-ja/koja-linear'),
 
     # KO-ZH
-    'llama-3-prime-base-zh': os.path.join(MODEL_BASE_DIR, 'mmt_ft/ko-zh/baseline'),
-    'llama-3-ko-prime-base-zh': os.path.join(MODEL_BASE_DIR, 'mmt_ft/ko-zh/ko'),
-    'llama-3-zh-prime-base-zh': os.path.join(MODEL_BASE_DIR, 'mmt_ft/ko-zh/zh'),
-    'llama-3-kozh-halfzh-prime-base-zh': os.path.join(MODEL_BASE_DIR, 'mmt_ft/ko-zh/kozh-halfzh'),
-    'llama-3-kozh-sigmoid-prime-base-zh': os.path.join(MODEL_BASE_DIR, 'mmt_ft/ko-zh/kozh-sigmoid'),
-    'llama-3-kozh-linear-prime-base-zh': os.path.join(MODEL_BASE_DIR, 'mmt_ft/ko-zh/kozh-linear'),
+    'llama-3-prime-base-zh': os.path.join(MODEL_BASE_DIR, 'mmt-ft/ko-zh/baseline'),
+    'llama-3-ko-prime-base-zh': os.path.join(MODEL_BASE_DIR, 'mmt-ft/ko-zh/ko'),
+    'llama-3-zh-prime-base-zh': os.path.join(MODEL_BASE_DIR, 'mmt-ft/ko-zh/zh'),
+    'llama-3-kozh-halfzh-prime-base-zh': os.path.join(MODEL_BASE_DIR, 'mmt-ft/ko-zh/kozh-halfzh'),
+    'llama-3-kozh-sigmoid-prime-base-zh': os.path.join(MODEL_BASE_DIR, 'mmt-ft/ko-zh/kozh-sigmoid'),
+    'llama-3-kozh-linear-prime-base-zh': os.path.join(MODEL_BASE_DIR, 'mmt-ft/ko-zh/kozh-linear'),
 
     # MMT
-    'llama-3-prime-base-mmt': os.path.join(MODEL_BASE_DIR, 'mmt_ft/ko-enjazh/baseline'),
-    'llama-3-ko-prime-base-mmt': os.path.join(MODEL_BASE_DIR, 'mmt_ft/ko-enjazh/ko'),
-    'llama-3-ja-prime-base-mmt': os.path.join(MODEL_BASE_DIR, 'mmt_ft/ko-enjazh/ja'),
-    'llama-3-zh-prime-base-mmt': os.path.join(MODEL_BASE_DIR, 'mmt_ft/ko-enjazh/zh'),
-    'llama-3-kojazh-prime-base-mmt': os.path.join(MODEL_BASE_DIR, 'mmt_ft/ko-enjazh/kojazh'),
-    'llama-3-kojazh-halfall-prime-base-mmt': os.path.join(MODEL_BASE_DIR, 'mmt_ft/ko-enjazh/kojazh-halfall'),
-    'llama-3-kojazh-equal-prime-base-mmt': os.path.join(MODEL_BASE_DIR, 'mmt_ft/ko-enjazh/kojazh-equal'),
-    'llama-3-kojazh-halfjazh-prime-base-mmt': os.path.join(MODEL_BASE_DIR, 'mmt_ft/ko-enjazh/kojazh-halfjazh'),
-    'llama-3-kojazh-quarterjazh-prime-base-mmt': os.path.join(MODEL_BASE_DIR, 'mmt_ft/ko-enjazh/kojazh-quarterjazh'),
+    'llama-3-prime-base-mmt': os.path.join(MODEL_BASE_DIR, 'mmt-ft/ko-enjazh/baseline'),
+    'llama-3-ko-prime-base-mmt': os.path.join(MODEL_BASE_DIR, 'mmt-ft/ko-enjazh/ko'),
+    'llama-3-ja-prime-base-mmt': os.path.join(MODEL_BASE_DIR, 'mmt-ft/ko-enjazh/ja'),
+    'llama-3-zh-prime-base-mmt': os.path.join(MODEL_BASE_DIR, 'mmt-ft/ko-enjazh/zh'),
+    'llama-3-kojazh-prime-base-mmt': os.path.join(MODEL_BASE_DIR, 'mmt-ft/ko-enjazh/kojazh'),
+    'llama-3-kojazh-halfall-prime-base-mmt': os.path.join(MODEL_BASE_DIR, 'mmt-ft/ko-enjazh/kojazh-halfall'),
+    'llama-3-kojazh-equal-prime-base-mmt': os.path.join(MODEL_BASE_DIR, 'mmt-ft/ko-enjazh/kojazh-equal'),
+    'llama-3-kojazh-halfjazh-prime-base-mmt': os.path.join(MODEL_BASE_DIR, 'mmt-ft/ko-enjazh/kojazh-halfjazh'),
+    'llama-3-kojazh-quarterjazh-prime-base-mmt': os.path.join(MODEL_BASE_DIR, 'mmt-ft/ko-enjazh/kojazh-quarterjazh'),
+    'llama-3-ko-prime-base-mmt-v0': os.path.join(MODEL_BASE_DIR, 'mmt-ft/ko-enjazh/v0'),
+    'llama-3-ko-prime-base-mmt-v1-sft-it-xml': os.path.join(MODEL_BASE_DIR, 'mmt-ft/ko-enjazh/v1-it-xml'),
 }
 
 DF_PATH_DICT = {
@@ -149,6 +157,7 @@ DF_PATH_DICT = {
     'mmt-m2m': os.path.join(SCRIPT_DIR, "../results/mmt/mmt_m2m_test_bidir_inferenced.csv"),
     'mmt-sample': os.path.join(SCRIPT_DIR, "../results/others/mmt_sample.csv"),
     'gaia': os.path.join(SCRIPT_DIR, "../results/gaia_test/gaia_works_string_translated_ca213.csv"),
+    'gaia-chunked': os.path.join(SCRIPT_DIR, "../results/gaia_test/gaia_works_string_translated_ca213_chunked.csv"),
     'mmt-words-en': os.path.join(SCRIPT_DIR, "../results/words/mmt/en_10k.csv"),
     'mmt-words-ko': os.path.join(SCRIPT_DIR, "../results/words/mmt/ko_17.4k_extended.csv"),
     'mmt-words-ja': os.path.join(SCRIPT_DIR, "../results/words/mmt/ja_10k.csv"),
