@@ -138,7 +138,11 @@ ADAPTER_MAPPING = {
     'llama-3-kojazh-halfjazh-prime-base-mmt': os.path.join(MODEL_BASE_DIR, 'mmt-ft/ko-enjazh/kojazh-halfjazh'),
     'llama-3-kojazh-quarterjazh-prime-base-mmt': os.path.join(MODEL_BASE_DIR, 'mmt-ft/ko-enjazh/kojazh-quarterjazh'),
     'llama-3-ko-prime-base-mmt-v0': os.path.join(MODEL_BASE_DIR, 'mmt-ft/ko-enjazh/v0'),
-    'llama-3-ko-prime-base-mmt-v1-sft-it-xml': os.path.join(MODEL_BASE_DIR, 'mmt-ft/ko-enjazh/v1-it-xml'),
+    'llama-3-ko-prime-base-mmt-v1-sft-it-xml': os.path.join(MODEL_BASE_DIR, 'mmt-ft/ko-enjazh/v1-it-sft-xml'),
+
+    # MMT-DPO
+    'llama-3-ko-prime-base-mmt-v1-dpo-it-xml': os.path.join(MODEL_BASE_DIR, 'mmt-ft/ko-enjazh/v1-it-dpo-xml/pol-v1'),
+    'llama-3-ko-prime-base-mmt-v1-dpo-it-xml-ref': os.path.join(MODEL_BASE_DIR, 'mmt-ft/ko-enjazh/v1-it-dpo-xml/ref-v1'),
 }
 
 DF_PATH_DICT = {
@@ -162,6 +166,8 @@ DF_PATH_DICT = {
     'mmt-words-ko': os.path.join(SCRIPT_DIR, "../results/words/mmt/ko_17.4k_extended.csv"),
     'mmt-words-ja': os.path.join(SCRIPT_DIR, "../results/words/mmt/ja_10k.csv"),
     'mmt-words-zh': os.path.join(SCRIPT_DIR, "../results/words/mmt/zh_10k.csv"),
+    'dpo-it-train': os.path.join(SCRIPT_DIR, "../results/prime-cleansing/dpo/dpo_train.csv"),
+    'dpo-it-test': os.path.join(SCRIPT_DIR, "../results/prime-cleansing/dpo/dpo_test.csv"),
 }
 
 DEEPL_LANG_CODE = {

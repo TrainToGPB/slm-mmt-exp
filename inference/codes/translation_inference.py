@@ -92,8 +92,8 @@ def translate_with_time(trans_func, prompts, *args, **kwargs):
 def preprocess_text(text):
     text = str(text)
     text = text.strip()
-    text = text.replace('\n', ' ')
-    text = re.sub(r'\s+', ' ', text)
+    # text = text.replace('\n', ' ')
+    # text = re.sub(r'\s+', ' ', text)
     return text
 
 
@@ -107,7 +107,7 @@ def postprocess_text(text, capitalize=True):
     return text
 
 
-def model_translate(translator, texts, src_lang, tgt_lang, args):
+def model_translate(translator, texts, guidelines, src_lang, tgt_lang, args):
     texts = [preprocess_text(text) for text in texts]
 
     trans_func = translator.translate
@@ -120,8 +120,8 @@ def model_translate(translator, texts, src_lang, tgt_lang, args):
     if args.model_type == 'api':
         prompts = texts
     else:
-        prompts = [make_prompt(text, src, tgt, args.guidelines, args.prompt_type) for text, src, tgt in zip(texts, src_lang, tgt_lang)]
-    
+        prompts = [make_prompt(text, src, tgt, eval(guide), args.prompt_type) for text, guide, src, tgt in zip(texts, guidelines, src_lang, tgt_lang)]
+
     batch_prompts = [prompts[i:i+args.batch_size] for i in range(0, len(prompts), args.batch_size)]
     batch_texts = [texts[i:i+args.batch_size] for i in range(0, len(texts), args.batch_size)]
 
@@ -135,7 +135,8 @@ def model_translate(translator, texts, src_lang, tgt_lang, args):
             translations_tmp, translation_time_tmp = translate_with_time(trans_func, batch_prompt, *trans_args)
             translation_times_tmp = [translation_time_tmp / len(batch_prompt)] * len(batch_prompt)
             if args.print_result:
-                for tgt, trans_tmp in zip(batch_text, translations_tmp):
+                for prompt, tgt, trans_tmp in zip(batch_prompt, batch_text, translations_tmp):
+                    print(f"\n[PROMPT] {prompt}")
                     print(f"\n[INPUT] {tgt}")
                     print(f"[OUTPUT] {postprocess_text(trans_tmp)}")
                     print(f"[AVG TIME] {translation_time_tmp / len(batch_prompt):.3f} ms (for {len(batch_prompt)} samples)")
@@ -154,12 +155,14 @@ def model_translate(translator, texts, src_lang, tgt_lang, args):
 
 def translate_text(translator, text, args):
     texts = [text]
-    translation, translation_time = model_translate(translator, texts, args)
+    guidelines = args.guidelines if args.guidelines is not None else None
+    translation, translation_time = model_translate(translator, texts, guidelines, args.src_lang, args.tgt_lang, args)
     return translation[0], translation_time[0]
 
 
 def translate_df(translator, df, args):
-    texts = df[args.tgt_col].tolist()
+    texts = df[args.src_col].tolist()
+    guidelines = [guide for guide in df[args.guide_col]] if args.guide_col in df.columns else None
     
     if args.lang_col is None and (args.src_lang is None and args.tgt_lang is None):
         raise ValueError("lang_col or (src_lang, tgt_lang) pair must be provided.")
@@ -182,19 +185,19 @@ def translate_df(translator, df, args):
             tgt_lang = tgt_lang[resume_idx:]
         print(f"Resuming from index {resume_idx}...")
 
-    translations, translation_times = model_translate(translator, texts, src_lang, tgt_lang, args)
+    translations, translation_times = model_translate(translator, texts, guidelines, src_lang, tgt_lang, args)
     
     if resume_idx > 0:
         translations = df[args.trans_col].tolist()[:resume_idx] + translations
         translation_times = df[args.time_col].tolist()[:resume_idx] + translation_times
 
     if args.trans_col not in df.columns:
-        df.insert(df.columns.get_loc(args.tgt_col)+1, args.trans_col, translations)
+        df.insert(df.columns.get_loc(args.src_col)+1, args.trans_col, translations)
     else:
         df[args.trans_col] = translations
     if len(translation_times) > 0 and args.time_col is not None:
         if args.time_col not in df.columns:
-            df.insert(df.columns.get_loc(args.tgt_col)+2, args.time_col, translation_times)
+            df.insert(df.columns.get_loc(args.src_col)+2, args.time_col, translation_times)
         else:
             df[args.time_col] = translation_times
 
@@ -249,7 +252,7 @@ def parse_infer_args(config_path):
                         default=data_config['prompt_type'], 
                         help="Translation prompt type to use.")
     parser.add_argument('--guidelines', 
-                        type=lambda x: x.split(','), 
+                        type=lambda x: x.split(',') if x is not None else None, 
                         default=data_config['guidelines'], 
                         help="Guidelines to use for translation.")
     parser.add_argument('--data_type', 
@@ -264,10 +267,14 @@ def parse_infer_args(config_path):
                         type=lambda x: None if x.lower() == 'none' else x,
                         default=data_config['dataset']['dataset_name'], 
                         help="Dataset to translate.")
-    parser.add_argument('--tgt_col', 
+    parser.add_argument('--src_col', 
                         type=lambda x: None if x.lower() == 'none' else x,
-                        default=data_config['dataset']['tgt_col'], 
+                        default=data_config['dataset']['src_col'], 
                         help="Target column to translate.")
+    parser.add_argument('--guide_col',
+                        type=lambda x: None if x.lower() == 'none' else x,
+                        default=data_config['dataset']['guide_col'],
+                        help="Guideline column to use.")
     parser.add_argument('--lang_col', 
                         type=lambda x: None if x.lower() == 'none' else x, 
                         default=data_config['dataset']['lang_col'], 

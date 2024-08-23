@@ -1,7 +1,7 @@
 model:
   model_name: llama-3-ko
-  lora_name: llama-3-ko-prime-base-mmt-v1-sft-it-xml
-  lora_nickname: mmt-v1
+  lora_name: llama-3-ko-prime-base-mmt-v1-dpo-it-xml
+  lora_nickname: mmt-dpo-v1
   model_type: vllm
   torch_dtype: bfloat16
   max_length: 8192
@@ -10,16 +10,17 @@ model:
 data:
   prompt_type: llama-instruct
   guidelines:
-    - "Translate plainly."
+    - None
   data_type: dataset
   sentence:
     text: "사번 입력 |sep| 이름 입력 |sep| 부서 입력 |sep| 직책 입력 |sep| 직위 입력 |sep| 직급 입력 |sep| 직계 입력 |sep| 직무 입력 |sep| 검색"
   dataset:
-    dataset_name: mmt
-    tgt_col: src
+    dataset_name: dpo-it-test
+    src_col: src
+    guide_col: guideline
     lang_col: direction
-    trans_col: v1_it_xml-trans
-    time_col: v1_it_xml-time
+    trans_col: v1_dpo-trans
+    time_col: v1_dpo-time
 
 infer:
   batch_size: 128

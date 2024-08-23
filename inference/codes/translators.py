@@ -285,7 +285,7 @@ def make_prompt(text, src_lang, tgt_lang, guidelines=None, prompt_type=None):
     elif prompt_type == 'llama-instruct':
         instruction_part = {
             'head': "<instruction>",
-            'body': f"Translate the source sentence from {src_lang} to {tgt_lang}.\nBe sure to reflect the guidelines below when translating.",
+            'body': f"Translate the source sentence from {LLAMA_LANG_TABLE[src_lang]} to {LLAMA_LANG_TABLE[tgt_lang]}.\nBe sure to reflect the guidelines below when translating.",
             'tail': "</instruction>"
         }
         instruction = f"{instruction_part['head']}\n{instruction_part['body']}\n{instruction_part['tail']}"
