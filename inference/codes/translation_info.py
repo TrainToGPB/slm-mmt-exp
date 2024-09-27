@@ -138,11 +138,37 @@ ADAPTER_MAPPING = {
     'llama-3-kojazh-halfjazh-prime-base-mmt': os.path.join(MODEL_BASE_DIR, 'mmt-ft/ko-enjazh/kojazh-halfjazh'),
     'llama-3-kojazh-quarterjazh-prime-base-mmt': os.path.join(MODEL_BASE_DIR, 'mmt-ft/ko-enjazh/kojazh-quarterjazh'),
     'llama-3-ko-prime-base-mmt-v0': os.path.join(MODEL_BASE_DIR, 'mmt-ft/ko-enjazh/v0'),
-    'llama-3-ko-prime-base-mmt-v1-sft-it-xml': os.path.join(MODEL_BASE_DIR, 'mmt-ft/ko-enjazh/v1-it-sft-xml'),
+    'llama-3-ko-prime-base-mmt-v1-sft-xml': os.path.join(MODEL_BASE_DIR, 'mmt-ft/ko-enjazh/v1-it-sft-xml'),
 
-    # MMT-DPO
-    'llama-3-ko-prime-base-mmt-v1-dpo-it-xml': os.path.join(MODEL_BASE_DIR, 'mmt-ft/ko-enjazh/v1-it-dpo-xml/pol-v1'),
-    'llama-3-ko-prime-base-mmt-v1-dpo-it-xml-ref': os.path.join(MODEL_BASE_DIR, 'mmt-ft/ko-enjazh/v1-it-dpo-xml/ref-v1'),
+    # # MMT-DPO
+    'llama-3-ko-prime-base-mmt-v1-dpo-v1.1-ref-it-xml': os.path.join(MODEL_BASE_DIR, 'mmt-dpo/v1/dpo-v1.1/ref-v1'),
+    'llama-3-ko-prime-base-mmt-v1-dpo-v1.1-it-xml': os.path.join(MODEL_BASE_DIR, 'mmt-dpo/v1/dpo-v1.1/pol-v1'),
+    # 'llama-3-ko-prime-base-mmt-v1-dpo-base-it-xml': os.path.join(MODEL_BASE_DIR, 'mmt-ft/ko-enjazh/v1-it-dpo-base-xml/pol-v1'),
+    # 'llama-3-ko-prime-base-mmt-v1-dpo-ref-it-xml': os.path.join(MODEL_BASE_DIR, 'mmt-ft/ko-enjazh/v1-it-dpo-base-xml/ref-v1'),
+    # 'llama-3-ko-prime-base-mmt-v1-dpo-b05-it-xml': os.path.join(MODEL_BASE_DIR, 'mmt-ft/ko-enjazh/v1-it-dpo-b05-xml/pol-v1'),
+    # 'llama-3-ko-prime-base-mmt-v1-dpo-b09-it-xml': os.path.join(MODEL_BASE_DIR, 'mmt-ft/ko-enjazh/v1-it-dpo-b09-xml/pol-v1'),
+    # 'llama-3-ko-prime-base-mmt-v1-dpo-lr5e7-it-xml': os.path.join(MODEL_BASE_DIR, 'mmt-ft/ko-enjazh/v1-it-dpo-lr5e7-xml/pol-v1'),
+    # 'llama-3-ko-prime-base-mmt-v1-dpo-lr5e6-it-xml': os.path.join(MODEL_BASE_DIR, 'mmt-ft/ko-enjazh/v1-it-dpo-lr5e6-xml/pol-v1'),
+    # 'llama-3-ko-prime-base-mmt-v1-dpo-lr1e5-it-xml': os.path.join(MODEL_BASE_DIR, 'mmt-ft/ko-enjazh/v1-it-dpo-lr1e5-xml/pol-v1'),
+    # 'llama-3-ko-prime-base-mmt-v1-dpo-ipo-it-xml': os.path.join(MODEL_BASE_DIR, 'mmt-ft/ko-enjazh/v1-it-dpo-ipo-xml/pol-v1'),
+    # 'llama-3-ko-prime-base-mmt-v1-dpo-ipo-b05-lr5e6-it-xml': os.path.join(MODEL_BASE_DIR, 'mmt-ft/ko-enjazh/v1-it-dpo-ipo-b05-lr5e6-xml/pol-v1'),
+
+    # MMT-DPO-HPT
+    'llama-3-ko-prime-base-mmt-v1-dpo-b01-lr5e7-it-xml': os.path.join(MODEL_BASE_DIR, 'mmt-dpo/v1/dpo-lr5e7-b01/pol-v1'),
+    'llama-3-ko-prime-base-mmt-v1-dpo-b01-lr1e6-it-xml': os.path.join(MODEL_BASE_DIR, 'mmt-dpo/v1/dpo-lr1e6-b01/pol-v1'),
+    'llama-3-ko-prime-base-mmt-v1-dpo-b01-lr5e6-it-xml': os.path.join(MODEL_BASE_DIR, 'mmt-dpo/v1/dpo-lr5e6-b01/pol-v1'),
+    'llama-3-ko-prime-base-mmt-v1-dpo-b01-lr1e5-it-xml': os.path.join(MODEL_BASE_DIR, 'mmt-dpo/v1/dpo-lr1e5-b01/pol-v1'),
+    'llama-3-ko-prime-base-mmt-v1-dpo-b01-lr5e5-it-xml': os.path.join(MODEL_BASE_DIR, 'mmt-dpo/v1/dpo-lr5e5-b01/pol-v1'),
+    'llama-3-ko-prime-base-mmt-v1-dpo-b01-lr1e4-it-xml': os.path.join(MODEL_BASE_DIR, 'mmt-dpo/v1/dpo-lr1e4-b01/pol-v1'),
+    'llama-3-ko-prime-base-mmt-v1-ipo-b01-lr5e7-it-xml': os.path.join(MODEL_BASE_DIR, 'mmt-dpo/v1/ipo-lr5e7-b01/pol-v1'),
+    'llama-3-ko-prime-base-mmt-v1-ipo-b01-lr1e6-it-xml': os.path.join(MODEL_BASE_DIR, 'mmt-dpo/v1/ipo-lr1e6-b01/pol-v1'),
+    'llama-3-ko-prime-base-mmt-v1-ipo-b01-lr5e6-it-xml': os.path.join(MODEL_BASE_DIR, 'mmt-dpo/v1/ipo-lr5e6-b01/pol-v1'),
+    'llama-3-ko-prime-base-mmt-v1-ipo-b01-lr1e5-it-xml': os.path.join(MODEL_BASE_DIR, 'mmt-dpo/v1/ipo-lr1e5-b01/pol-v1'),
+    'llama-3-ko-prime-base-mmt-v1-ipo-b01-lr5e5-it-xml': os.path.join(MODEL_BASE_DIR, 'mmt-dpo/v1/ipo-lr5e5-b01/pol-v1'),
+    'llama-3-ko-prime-base-mmt-v1-ipo-b01-lr1e4-it-xml': os.path.join(MODEL_BASE_DIR, 'mmt-dpo/v1/ipo-lr1e4-b01/pol-v1'),
+
+    # MMT-SFT-HPT (with instruction data)
+    'llama-3-ko-prime-base-mmt-v1-sft-it-xml': os.path.join(MODEL_BASE_DIR, 'mmt-sft-hpt/loraa16_lr1e-4_scheconstant_with_warmup_wur0.10'),
 }
 
 DF_PATH_DICT = {
@@ -168,6 +194,8 @@ DF_PATH_DICT = {
     'mmt-words-zh': os.path.join(SCRIPT_DIR, "../results/words/mmt/zh_10k.csv"),
     'dpo-it-train': os.path.join(SCRIPT_DIR, "../results/prime-cleansing/dpo/dpo_train.csv"),
     'dpo-it-test': os.path.join(SCRIPT_DIR, "../results/prime-cleansing/dpo/dpo_test.csv"),
+    'pdf-insurance': os.path.join(SCRIPT_DIR, "../results/atalk_pdf_test/insurance_sentences.csv"),
+    'pdf-law': os.path.join(SCRIPT_DIR, "../results/atalk_pdf_test/law_sentences.csv"),
 }
 
 DEEPL_LANG_CODE = {

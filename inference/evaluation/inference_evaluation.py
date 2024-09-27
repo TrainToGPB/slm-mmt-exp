@@ -179,6 +179,9 @@ def save_line_by_line_metrics(eval_df, save_path, metric_type='xcomet-with-ref',
         if tgt_col == 'src' or tgt_col == 'tgt':
             if metric_type != 'xcomet-no-ref':
                 continue
+            if tgt_col == 'src':
+                src_col = 'tgt'
+                ref_col = 'src'
         else:
             if 'trans' not in tgt_col:
                 continue
@@ -193,8 +196,10 @@ def save_line_by_line_metrics(eval_df, save_path, metric_type='xcomet-with-ref',
             if eval_col in eval_df.columns:
                 continue
             xcomet_scores = calculate_xcomet_line_by_line(eval_df, xcomet_model, tgt_col, src_col, ref_col)
-            eval_df.insert(eval_df.columns.get_loc(tgt_col) + 1, eval_col, xcomet_scores)
-            eval_df[eval_col] = xcomet_scores
+            if eval_col in eval_df.columns:
+                eval_df[eval_col] = xcomet_scores
+            else:
+                eval_df.insert(eval_df.columns.get_loc(tgt_col) + 1, eval_col, xcomet_scores)
 
         elif metric_type == 'bleu':
             eval_col = tgt_col.replace('trans', 'bleu')
@@ -228,6 +233,9 @@ def main():
         'mmt-clean': '../results/mmt/mmt_test_bidir_inferenced_clean.csv',
         'mmt-train-prime': '../results/prime-cleansing/sft/prime_train.csv',
         'mmt-train-base': '../results/prime-cleansing/sft/base_train.csv',
+        'en-train-not-prime': '../results/prime-cleansing/sft/en_not_prime_train_with_xcomet.csv',
+        'ja-train-not-prime': '../results/prime-cleansing/sft/ja_not_prime_train_with_xcomet.csv',
+        'zh-train-not-prime': '../results/prime-cleansing/sft/zh_not_prime_train_with_xcomet.csv',
     }
     results_path = results_path_dict[args.results_type]
     results = pd.read_csv(results_path)
@@ -260,11 +268,6 @@ def main():
         make_eval_dict(results, direction_cols, data_source_cols, save_path, metric_type=args.metric_type, print_dict=True)
 
     elif args.eval_type == 'line-by-line':
-        # if args.metric_type == 'bleu' or args.metric_type == 'xcomet-with-ref':
-        #     ref_col = 'tgt'
-        # else:
-        #     ref_col = None
-        # save_line_by_line_metrics(results, save_path=results_path, metric_type=args.metric_type, src_col='src', ref_col=ref_col)
         save_line_by_line_metrics(results, save_path=results_path, metric_type=args.metric_type, src_col='tgt', ref_col='src')
 
     elif args.eval_type == 'all':

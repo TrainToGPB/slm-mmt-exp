@@ -41,6 +41,7 @@ except:
     WANDB_CLIENT_KEY = "YOUR_WANDB_CLIENT_KEY"
 
 
+STORE_PATH = "/data/sehyeong/nmt"
 LANG_TABLE = {
     "ko": "한국어",
     "en": "English",
@@ -181,20 +182,20 @@ def map_bidirectional(dataset, lang_col1='ko', lang_col2='en', exist_direction=F
     return mapped_dataset
 
 
-def mix_word_dataset(dataset, word_dataset, word_size=10000):
-    sent_df = pd.DataFrame(dataset)
-    word_df = pd.DataFrame(word_dataset)
+def mix_dataset(dataset, dataset_to_mix, mix_size=10000):
+    df = pd.DataFrame(dataset)
+    df_to_mix = pd.DataFrame(dataset_to_mix)
     try:
-        word_df = word_df.sample(word_size).reset_index(drop=True)
+        df_to_mix = df_to_mix.sample(mix_size).reset_index(drop=True)
     except:
-        warnings.warn("Word dataset size is smaller than the specified size. Using the original size.")
+        warnings.warn(f"The size of dataset to be mixed ({len(df_to_mix)}) is smaller than the specified size({mix_size}). Using the original size.")
 
-    total_df = pd.concat([sent_df, word_df], axis=0)
-    total_df = total_df.sample(frac=1).reset_index(drop=True)
+    df_mixed = pd.concat([df, df_to_mix], axis=0)
+    df_mixed = df_mixed.sample(frac=1).reset_index(drop=True)
 
-    dataset = Dataset.from_pandas(total_df)
+    dataset_mixed = Dataset.from_pandas(df_mixed)
     
-    return dataset
+    return dataset_mixed
 
 
 def add_special_lang_tokens(tokenizer):
@@ -208,25 +209,39 @@ def add_special_lang_tokens(tokenizer):
 def train(args):
     set_seed(args.seed)
 
-    model, tokenizer = load_model_and_tokenizer(args)
+    args.train_dataset_name = os.path.join(STORE_PATH, args.train_dataset_name)
+    args.eval_dataset_name = os.path.join(STORE_PATH, args.eval_dataset_name)
+    train_dataset = load_dataset(args.train_dataset_name, cache_dir=HF_DATASETS_CACHE_DIR)['train']
+    eval_dataset = load_dataset(args.eval_dataset_name, cache_dir=HF_DATASETS_CACHE_DIR)['validation']
 
-    if args.mix_word_dataset:
-        train_dataset = load_dataset(args.train_dataset_name, cache_dir=HF_DATASETS_CACHE_DIR)['train']
-        eval_dataset = load_dataset(args.eval_dataset_name, cache_dir=HF_DATASETS_CACHE_DIR)['validation']
+    if args.train_word_dataset_name is not None:
+        args.train_word_dataset_name = os.path.join(STORE_PATH, args.train_word_dataset_name)
         train_word_dataset = load_dataset(args.train_word_dataset_name, cache_dir=HF_DATASETS_CACHE_DIR)['train']
-        # eval_word_dataset = load_dataset(args.eval_word_dataset_name, cache_dir=HF_DATASETS_CACHE_DIR)['validation']
-        train_dataset = mix_word_dataset(train_dataset, train_word_dataset, word_size=args.train_word_size)
-        # eval_dataset = mix_word_dataset(eval_dataset, eval_word_dataset, word_size=len(eval_word_dataset))
-    else:
-        train_dataset = load_dataset(args.train_dataset_name, cache_dir=HF_DATASETS_CACHE_DIR)['train']
-        eval_dataset = load_dataset(args.eval_dataset_name, cache_dir=HF_DATASETS_CACHE_DIR)['validation']
+        train_dataset = mix_dataset(train_dataset, train_word_dataset, mix_size=args.train_word_size)
+    if args.eval_word_dataset_name is not None:
+        args.eval_word_dataset_name = os.path.join(STORE_PATH, args.eval_word_dataset_name)
+        eval_word_dataset = load_dataset(args.eval_word_dataset_name, cache_dir=HF_DATASETS_CACHE_DIR)['validation']
+        eval_dataset = mix_dataset(eval_dataset, eval_word_dataset, mix_size=len(eval_word_dataset))
 
     train_dataset = map_bidirectional(train_dataset, lang_col1=args.lang_col1, lang_col2=args.lang_col2, exist_direction=True)
     eval_dataset = map_bidirectional(eval_dataset, lang_col1=args.lang_col1, lang_col2=args.lang_col2, exist_direction=True)
 
+    if args.train_inst_dataset_name is not None:
+        args.train_inst_dataset_name = os.path.join(STORE_PATH, args.train_inst_dataset_name)
+        train_inst_dataset = load_dataset(args.train_inst_dataset_name, cache_dir=HF_DATASETS_CACHE_DIR)['train']
+        train_dataset = mix_dataset(train_dataset, train_inst_dataset, mix_size=args.train_inst_size)
+    if args.eval_inst_dataset_name is not None:
+        args.eval_inst_dataset_name = os.path.join(STORE_PATH, args.eval_inst_dataset_name)
+        eval_inst_dataset = load_dataset(args.eval_inst_dataset_name, cache_dir=HF_DATASETS_CACHE_DIR)['validation']
+        eval_dataset = mix_dataset(eval_dataset, eval_inst_dataset, mix_size=len(eval_inst_dataset))
+
     if args.just_test:
         train_dataset = train_dataset.select(range(1000))
         eval_dataset = eval_dataset.select(range(10))
+    
+    # just for hyperparameter tuning
+    train_dataset = train_dataset.select(range(230000))
+    eval_dataset = eval_dataset.select(range(14000))
 
     dataset_size = len(train_dataset)
     warmup_steps = calculate_warmup_steps(
@@ -240,13 +255,13 @@ def train(args):
 
     if args.just_test:
         project_name = 'test'
-        output_dir = '/data/sehyeong/nmt/models/test'
+        output_dir = os.path.join(STORE_PATH, 'models/test')
         logging_steps = 1
         eval_steps = 1
         save_steps = 1
     else:
         project_name = args.project_name
-        output_dir = args.output_dir
+        output_dir = os.path.join(STORE_PATH, args.output_dir)
         logging_steps = min(25, warmup_steps // 10) if warmup_steps >= 10 else args.logging_steps
         eval_steps = warmup_steps if warmup_steps > 0 else args.eval_steps
         # eval_steps = args.eval_steps
@@ -268,6 +283,8 @@ def train(args):
     )
     wandb.init(project=project_name, name=args.run_name, config=args)
 
+    model, tokenizer = load_model_and_tokenizer(args)
+
     training_args = TrainingArguments(
         output_dir=output_dir,
         dataloader_num_workers=args.dataloader_num_workers,
@@ -277,6 +294,7 @@ def train(args):
         learning_rate=args.learning_rate,
         warmup_steps=warmup_steps, # 전체 step의 10%
         lr_scheduler_type=args.lr_scheduler_type,
+        lr_scheduler_kwargs={'num_cycles': args.lr_scheduler_num_cycles},
         optim=args.optim,
         gradient_checkpointing=args.gradient_checkpointing,
         gradient_accumulation_steps=args.gradient_accumulation_steps,
@@ -302,25 +320,25 @@ def train(args):
 
     def formatting_func(example):
         prompts = []
-        for src_text, tgt_text, direction in zip(example['src'], example['tgt'], example['direction']):
+        if 'instruction' not in example:
+            example['instruction'] = [None] * len(example['src'])
+        for src_text, tgt_text, instruction, direction in zip(example['src'], example['tgt'], example['instruction'], example['direction']):
             src_langcode, tgt_langcode = direction.split('-')[0], direction.split('-')[1]
             src_lang, tgt_lang = LANG_TABLE[src_langcode], LANG_TABLE[tgt_langcode]
             
+            task_part = {
+                'head': "<task>",
+                'body': f"Translate the source sentence from {src_lang} to {tgt_lang}.\nBe sure to reflect the guidelines below when translating.",
+                'tail': "</task>"
+            }
+            task = f"{task_part['head']}\n{task_part['body']}\n{task_part['tail']}"
             instruction_part = {
                 'head': "<instruction>",
-                'body': f"Translate the source sentence from {src_lang} to {tgt_lang}.\nBe sure to reflect the guidelines below when translating.",
+                'body': ["Translate without any condition."] if instruction is None else eval(instruction),
                 'tail': "</instruction>"
             }
-            instruction = f"{instruction_part['head']}\n{instruction_part['body']}\n{instruction_part['tail']}"
-            guideline_part = {
-                'head': "<guideline>",
-                'body': [
-                    "Translate plainly."
-                ],
-                'tail': "</guideline>"
-            }
-            guideline_body_part = '\n'.join([f'- {body}' for body in guideline_part['body']])
-            guideline = f"{guideline_part['head']}\n{guideline_body_part}\n{guideline_part['tail']}"
+            instruction_body_part = '\n'.join([f'- {body}' for body in instruction_part['body']])
+            instruction = f"{instruction_part['head']}\n{instruction_body_part}\n{instruction_part['tail']}"
             src_part = {
                 'head': f"<source><{src_lang}>",
                 'body': src_text.strip(),
@@ -340,7 +358,7 @@ def train(args):
             }
             translation = f"{translation_part['head']}\n{translation_part['body']}\n{translation_part['tail']}"
             
-            prompt = f"{instruction}\n\n{guideline}\n\n{translation}"
+            prompt = f"{task}\n\n{instruction}\n\n{translation}"
 
             prompts.append(prompt)
 

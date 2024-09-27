@@ -1,26 +1,26 @@
 model:
   model_name: llama-3-ko
-  lora_name: llama-3-ko-prime-base-mmt-v1-dpo-it-xml
-  lora_nickname: mmt-dpo-v1
+  lora_name: llama-3-ko-prime-base-mmt-v1-sft-it-xml # 번역 LoRA 어댑터 이름 (translation_info.py에서 지정)
+  lora_nickname: mmt-v1
   model_type: vllm
   torch_dtype: bfloat16
   max_length: 8192
   seed: 42
 
 data:
-  prompt_type: llama-instruct
+  prompt_type: llama-xml
   guidelines:
     - None
   data_type: dataset
   sentence:
-    text: "사번 입력 |sep| 이름 입력 |sep| 부서 입력 |sep| 직책 입력 |sep| 직위 입력 |sep| 직급 입력 |sep| 직계 입력 |sep| 직무 입력 |sep| 검색"
+    text: "text to translate"
   dataset:
-    dataset_name: dpo-it-test
-    src_col: src
-    guide_col: guideline
-    lang_col: direction
-    trans_col: v1_dpo-trans
-    time_col: v1_dpo-time
+    dataset_name: mmt # 번역할 데이터셋 이름 (translation_info.py에서 지정)
+    src_col: src # 번역할 데이터셋 내의 번역 대상 원본 문장 칼럼명
+    guide_col: None # 번역 데이터셋 내의 instruction 칼럼명 (None으로 두시면 됩니다)
+    lang_col: direction # 번역 데이터셋 내의 언어 방향 (e.g., ko-en) 칼럼명 (일방향인 경우 아래 infer/src_lang, infer/tgt_lang으로 설정해두시면 됩니다)
+    trans_col: sft_it-trans # 번역 데이터셋 내 번역문을 기록할 칼럼명
+    time_col: sft_it-time # 번역 데이터셋 내 번역 시간을 기록할 칼럼명
 
 infer:
   batch_size: 128

@@ -282,20 +282,20 @@ def make_prompt(text, src_lang, tgt_lang, guidelines=None, prompt_type=None):
         tgt_suffix = f"### {LLAMA_LANG_TABLE[tgt_lang]}:"
         prompt = f"{instruction}\n{src_suffix} {text}\n{tgt_suffix}"
 
-    elif prompt_type == 'llama-instruct':
+    elif prompt_type == 'llama-xml':
+        task_part = {
+            'head': "<task>",
+            'body': f"Translate the source sentence from {LLAMA_LANG_TABLE[src_lang]} to {LLAMA_LANG_TABLE[tgt_lang]}.\nBe sure to reflect the guidelines below when translating.",
+            'tail': "</task>"
+        }
+        task = f"{task_part['head']}\n{task_part['body']}\n{task_part['tail']}"
         instruction_part = {
             'head': "<instruction>",
-            'body': f"Translate the source sentence from {LLAMA_LANG_TABLE[src_lang]} to {LLAMA_LANG_TABLE[tgt_lang]}.\nBe sure to reflect the guidelines below when translating.",
+            'body': guidelines if guidelines is not None else ['Translate without any condition.'],
             'tail': "</instruction>"
         }
-        instruction = f"{instruction_part['head']}\n{instruction_part['body']}\n{instruction_part['tail']}"
-        guideline_part = {
-            'head': "<guideline>",
-            'body': guidelines if guidelines is not None else ['Translate plainly.'],
-            'tail': "</guideline>"
-        }
-        guideline_body_part = '\n'.join([f'- {body}' for body in guideline_part['body']])
-        guideline = f"{guideline_part['head']}\n{guideline_body_part}\n{guideline_part['tail']}"
+        instruction_body_part = '\n'.join([f'- {body}' for body in instruction_part['body']])
+        instruction = f"{instruction_part['head']}\n{instruction_body_part}\n{instruction_part['tail']}"
         src_part = {
             'head': f"<source><{LLAMA_LANG_TABLE[src_lang]}>",
             'body': text.strip(),
@@ -311,7 +311,7 @@ def make_prompt(text, src_lang, tgt_lang, guidelines=None, prompt_type=None):
             'body': f"{src}\n{tgt}",
         }
         translation = f"{translation_part['head']}\n{translation_part['body']}"
-        prompt = f"{instruction}\n\n{guideline}\n\n{translation}"
+        prompt = f"{task}\n\n{instruction}\n\n{translation}"
 
     elif prompt_type == 'madlad':
         src_suffix = f"<2{MADLAD_LANG_CODE[tgt_lang]}>"

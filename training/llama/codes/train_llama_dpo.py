@@ -117,21 +117,21 @@ def preprocess_dataset(dataset):
         src_lang_code, tgt_lang_code = example['direction'].split('-')
         src_lang, tgt_lang = LANG_TABLE[src_lang_code], LANG_TABLE[tgt_lang_code]
         src_text = example['src']
-        guides = eval(example['guideline'])
+        instructions = eval(example['instruction'])
 
+        task_part = {
+            'head': "<task>",
+            'body': f"Translate the source sentence from {src_lang} to {tgt_lang}.\nBe sure to reflect the guidelines below when translating.",
+            'tail': "</task>"
+        }
+        task = f"{task_part['head']}\n{task_part['body']}\n{task_part['tail']}"
         instruction_part = {
             'head': "<instruction>",
-            'body': f"Translate the source sentence from {src_lang} to {tgt_lang}.\nBe sure to reflect the guidelines below when translating.",
+            'body': instructions,
             'tail': "</instruction>"
         }
-        instruction = f"{instruction_part['head']}\n{instruction_part['body']}\n{instruction_part['tail']}"
-        guideline_part = {
-            'head': "<guideline>",
-            'body': guides,
-            'tail': "</guideline>"
-        }
-        guideline_body_part = '\n'.join([f'- {body}' for body in guideline_part['body']])
-        guideline = f"{guideline_part['head']}\n{guideline_body_part}\n{guideline_part['tail']}"
+        instruction_body_part = '\n'.join([f'- {body}' for body in instruction_part['body']])
+        instruction = f"{instruction_part['head']}\n{instruction_body_part}\n{instruction_part['tail']}"
         src_part = {
             'head': f"<source><{src_lang}>",
             'body': src_text.strip(),
@@ -148,7 +148,7 @@ def preprocess_dataset(dataset):
         }
         translation = f"{translation_part['head']}\n{translation_part['body']}"
         
-        prompt = f"{instruction}\n\n{guideline}\n\n{translation}"
+        prompt = f"{task}\n\n{instruction}\n\n{translation}"
 
         return prompt
     
@@ -180,11 +180,16 @@ def train(args):
 
     model, tokenizer = load_model_and_tokenizer(args)
 
+    if args.train_dataset_name.startswith('.') or args.train_dataset_name.startswith('/') or args.train_dataset_name.endswith('/'):
+        args.train_dataset_name = os.path.join(STORE_PATH, args.train_dataset_name)
     train_dataset = load_dataset(args.train_dataset_name, cache_dir=HF_DATASETS_CACHE_DIR)['train']
     if args.just_test:
         train_dataset = train_dataset.select(range(1000))
     train_dataset = preprocess_dataset(train_dataset)
-    print(train_dataset[0])
+    # data_num = 0
+    # print(train_dataset[data_num]['prompt'])
+    # print(train_dataset[data_num]['chosen'])
+    # print(train_dataset[data_num]['rejected'])
 
     dataset_size = len(train_dataset)
     warmup_steps = calculate_warmup_steps(
@@ -222,6 +227,7 @@ def train(args):
         learning_rate=args.learning_rate,
         warmup_steps=warmup_steps, # 전체 step의 10%
         lr_scheduler_type=args.lr_scheduler_type,
+        lr_scheduler_kwargs={'num_cycles': args.lr_scheduler_num_cycles},
         optim=args.optim,
         gradient_checkpointing=args.gradient_checkpointing,
         gradient_accumulation_steps=args.gradient_accumulation_steps,

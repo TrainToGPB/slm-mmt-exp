@@ -2,16 +2,17 @@ training:
   plm_name: beomi/Llama-3-Open-Ko-8B
   use_fsdp: False
   torch_dtype: bfloat16
-  output_dir: models/mmt-ft/ko-enjazh/v1-it-dpo-xml
+  output_dir: models/mmt-dpo/v1/dpo-v1.1
   dataloader_num_workers: 4
   per_device_batch_size: 8
   max_src_length: 4000
   max_new_length: 4000
   max_length: 8192
   num_epochs: 1
-  learning_rate: 1e-4
+  learning_rate: 5e-5
   warmup_ratio: 0.10
-  lr_scheduler_type: constant_with_warmup
+  lr_scheduler_type: cosine_with_restarts # constant, constant_with_warmup
+  lr_scheduler_num_cycles: 3
   optim: paged_adamw_32bit
   gradient_checkpointing: True
   gradient_accumulation_steps: 4
@@ -36,7 +37,7 @@ training:
   remove_unused_columns: True
 
 data: 
-  train_dataset_name: /data/sehyeong/nmt/datasets/mmt-dpo/
+  train_dataset_name: datasets/mmt/mmt-dpo/
 
 peft:
   use_4bit: False
@@ -48,10 +49,10 @@ peft:
 
 dpo:
   dpo_loss_type: sigmoid # sigmoid, hinge(RSO), ipo, kto_pair, bco_pair, sppo_hard, nca_pair, robust
-  dpo_beta: 0.1
+  dpo_beta: 0.1 # 0.1, 0.3, 0.5, 0.7, 0.9
   pol_adapter_name: pol-v1
   ref_adapter_name: ref-v1
 
 general:
-  project_name: mmt-v1
-  run_name: v1-dpo-it-xml
+  project_name: mmt-dpo
+  run_name: dpo-lr5e5-cwr5-b01-v1.1

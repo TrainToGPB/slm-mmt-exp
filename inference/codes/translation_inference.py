@@ -67,8 +67,8 @@ def load_translator(args):
             best_of=1,
             top_k=40, 
             top_p=0.95, 
-            skip_special_tokens=False, 
-            stop=None, 
+            skip_special_tokens=True, 
+            stop=['<|end_of_text|>'], 
             repetition_penalty=1.1, 
             max_tokens=MAX_LENGTH
         )
@@ -97,6 +97,12 @@ def preprocess_text(text):
     return text
 
 
+def extract_guidelines(prompt):
+    # '<guideline>', '</guideline>'으로 감싸진 부분을 추출
+    guidelines = re.search(r'<guideline>(.*?)</guideline>', prompt)
+    return guidelines
+
+
 def postprocess_text(text, capitalize=True):
     text = str(text)
     if re.search(r'(</\w+>\s*){3}$', text):
@@ -109,6 +115,10 @@ def postprocess_text(text, capitalize=True):
 
 def model_translate(translator, texts, guidelines, src_lang, tgt_lang, args):
     texts = [preprocess_text(text) for text in texts]
+    if guidelines is None:
+        guidelines = [None] * len(texts)
+    else:
+        guidelines = [eval(guide) for guide in guidelines]
 
     trans_func = translator.translate
 
@@ -120,7 +130,7 @@ def model_translate(translator, texts, guidelines, src_lang, tgt_lang, args):
     if args.model_type == 'api':
         prompts = texts
     else:
-        prompts = [make_prompt(text, src, tgt, eval(guide), args.prompt_type) for text, guide, src, tgt in zip(texts, guidelines, src_lang, tgt_lang)]
+        prompts = [make_prompt(text, src, tgt, guide, args.prompt_type) for text, guide, src, tgt in zip(texts, guidelines, src_lang, tgt_lang)]
 
     batch_prompts = [prompts[i:i+args.batch_size] for i in range(0, len(prompts), args.batch_size)]
     batch_texts = [texts[i:i+args.batch_size] for i in range(0, len(texts), args.batch_size)]
@@ -136,8 +146,9 @@ def model_translate(translator, texts, guidelines, src_lang, tgt_lang, args):
             translation_times_tmp = [translation_time_tmp / len(batch_prompt)] * len(batch_prompt)
             if args.print_result:
                 for prompt, tgt, trans_tmp in zip(batch_prompt, batch_text, translations_tmp):
-                    print(f"\n[PROMPT] {prompt}")
-                    print(f"\n[INPUT] {tgt}")
+                    # print(f"\n[GUIDES] {extract_guidelines(prompt)}")
+                    print(f"\n[GUIDES] {prompt}")
+                    print(f"[INPUT] {tgt}")
                     print(f"[OUTPUT] {postprocess_text(trans_tmp)}")
                     print(f"[AVG TIME] {translation_time_tmp / len(batch_prompt):.3f} ms (for {len(batch_prompt)} samples)")
             translations.extend(translations_tmp)
@@ -148,7 +159,7 @@ def model_translate(translator, texts, guidelines, src_lang, tgt_lang, args):
         translations.extend([None] * remaining_length)
         translation_times.extend([None] * remaining_length)
     
-    translations = [postprocess_text(trans_tmp, capitalize=False) if trans_tmp is not None else None for trans_tmp in translations]
+    translations = [trans_tmp if trans_tmp is not None else None for trans_tmp in translations]
     
     return translations, translation_times
 
@@ -252,7 +263,7 @@ def parse_infer_args(config_path):
                         default=data_config['prompt_type'], 
                         help="Translation prompt type to use.")
     parser.add_argument('--guidelines', 
-                        type=lambda x: x.split(',') if x is not None else None, 
+                        type=lambda x: None if x.lower() == 'none' else x.split(','), 
                         default=data_config['guidelines'], 
                         help="Guidelines to use for translation.")
     parser.add_argument('--data_type', 
